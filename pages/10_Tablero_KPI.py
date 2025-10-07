@@ -56,10 +56,16 @@ def _segment_card(title: str, primary: str, stats: list[tuple[str, str]]) -> str
 def _render_kpi_stat_cards(items: list[tuple[str, str]]) -> None:
     if not items:
         return
-    # Reutilizamos _metric_card para heredar la clase "app-card" y asegurar el mismo acabado.
-    cards = [_metric_card(label, value) for label, value in items]
+    cards = []
+    for label, value in items:
+        cards.append(
+            "<article class=\"app-kpi-card\">"
+            f"<span class=\"app-kpi-card__label\">{html.escape(label)}</span>"
+            f"<span class=\"app-kpi-card__value\">{html.escape(value)}</span>"
+            "</article>"
+        )
     st.markdown(
-        '<div class="app-card-grid">' + "".join(cards) + '</div>',
+        '<div class="app-kpi-cards">' + "".join(cards) + '</div>',
         unsafe_allow_html=True,
     )
 
@@ -274,6 +280,36 @@ tpc_loc = (pago_l - cc_l).dt.days
 mean_dso_loc = float(np.nanmean(dso_loc)) if dso_loc.notna().any() else np.nan
 mean_tfc_loc = float(np.nanmean(tfc_loc)) if tfc_loc.notna().any() else np.nan
 mean_tpc_loc = float(np.nanmean(tpc_loc)) if tpc_loc.notna().any() else np.nan
+
+# Reutilizamos _segment_card para heredar la clase "app-card" (styles/theme.css) y lograr el mismo acabado visual.
+def _format_promedio(valor: float) -> str:
+    return f"{one_decimal(valor)} dias" if pd.notna(valor) else "s/d"
+
+
+def _build_pagadas_cards() -> list[str]:
+    """Genera tarjetas de Pagadas con el mismo estilo que 'Métricas por cuenta especial'."""
+    configuracion = [
+        ("DSO (emision-pago)", mean_dso_loc, mean_dso_kpi, dso_loc),
+        ("TFC (emision-contab.)", mean_tfc_loc, mean_tfc_kpi, tfc_loc),
+        ("TPC (contab.-pago)", mean_tpc_loc, mean_tpc_kpi, tpc_loc),
+    ]
+    cards: list[str] = []
+    for titulo, promedio_local, promedio_global, serie in configuracion:
+        serie_num = pd.to_numeric(serie, errors="coerce")
+        if not serie_num.notna().any():
+            continue
+        stats = [
+            ("Promedio global", _format_promedio(promedio_global)),
+            ("Documentos", f"{int(serie_num.notna().sum()):,}"),
+        ]
+        # Cada tarjeta replica la jerarquía tipográfica al reutilizar app-card__title/app-card__value.
+        cards.append(_segment_card(titulo, _format_promedio(promedio_local), stats))
+    return cards
+
+
+pagadas_cards = [card for card in _build_pagadas_cards() if card]
+if any(pagadas_cards):
+    st.markdown('<div class="app-card-grid">' + "".join(pagadas_cards) + '</div>', unsafe_allow_html=True)
 
 # Reutilizamos _segment_card para heredar la clase "app-card" (styles/theme.css) y lograr el mismo acabado visual.
 def _format_promedio(valor: float) -> str:
