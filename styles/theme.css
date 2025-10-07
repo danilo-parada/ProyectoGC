@@ -508,6 +508,59 @@ div[data-testid="stMetricValue"] {
   letter-spacing: 0.3px;
 }
 
+.app-range-card-grid {
+  display: grid;
+  gap: 1rem;
+  margin: 0.8rem 0 1.4rem;
+}
+
+@media (min-width: 768px) {
+  .app-range-card-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+.app-range-card {
+  position: relative;
+  padding: 1.15rem 1.3rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(150deg, rgba(34, 71, 140, 0.92), rgba(17, 36, 70, 0.88));
+  border: 1px solid rgba(79, 156, 255, 0.42);
+  box-shadow: 0 18px 40px rgba(9, 22, 46, 0.35);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.app-range-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 55%);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.app-range-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 24px 48px rgba(9, 22, 46, 0.42);
+}
+
+.app-range-card__title {
+  position: relative;
+  font-size: 0.82rem;
+  letter-spacing: 0.45px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.82);
+  margin-bottom: 0.55rem;
+}
+
+.app-range-card__value {
+  position: relative;
+  font-size: 1.95rem;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.1;
+}
+
 /* Boton del uploader con estilo propio y texto en espanol */
 .stFileUploader button[kind='secondary'] {
   background: linear-gradient(135deg, rgba(79, 156, 255, 0.95), rgba(51, 93, 173, 0.95));
