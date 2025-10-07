@@ -1,0 +1,308 @@
+# pages/20_Rankings.py
+from __future__ import annotations
+import streamlit as st
+import pandas as pd
+import numpy as np
+
+from lib_common import (
+    get_df_norm, general_date_filters_ui, apply_general_filters,
+    advanced_filters_ui, apply_advanced_filters, header_ui, style_table, money
+)
+from lib_report import excel_bytes_single, excel_bytes_multi
+
+# ================== Estilos globales de la tabla ==================
+HEADER_BG = "#003399"   # azul rey
+HEADER_FG = "#FFFFFF"   # blanco
+FONT_SIZE = "16px"      # <-- Ajusta aquí el tamaño de letra de TODA la tabla
+
+st.set_page_config(page_title="Rankings", layout="wide")
+header_ui(
+    title="Rankings por Categoría",
+    current_page="Rankings",
+    subtitle="Top N por Proveedores y Centros, con filtros locales de Cuenta Especial y Prioritario"
+)
+
+# -------- Carga base --------
+df0 = get_df_norm()
+if df0 is None:
+    st.warning("Carga tus datos en 'Carga de Data'.")
+    st.stop()
+
+# -------- Filtros globales (sin prioritario global) --------
+fac_ini, fac_fin, pay_ini, pay_fin = general_date_filters_ui(df0)
+sede, org, prov, cc, oc, est, _prio_removed = advanced_filters_ui(
+    df0, show_controls=['sede','org','prov','cc','oc','est']
+)
+df = apply_general_filters(df0, fac_ini, fac_fin, pay_ini, pay_fin)
+df = apply_advanced_filters(df, sede, org, prov, cc, oc, est, prio=[])
+
+# Trabajamos con pagadas
+dfp = df[df["estado_pago"] == "pagada"].copy()
+if dfp.empty:
+    st.info("No hay facturas pagadas con los filtros actuales.")
+    st.stop()
+
+# -------- Filtros LOCALES (solo esta página) --------
+col_l1, col_l2, col_l3 = st.columns([1,1,2])
+
+# Cuenta Especial (local)
+ce_local = "Todas"
+if "cuenta_especial" in dfp.columns:
+    ce_local = col_l1.radio(
+        "Cuenta Especial (local)",
+        options=["Todas", "Cuenta Especial", "No Cuenta Especial"],
+        horizontal=True, index=0
+    )
+
+# Prioritario (local)
+prio_local = "Todos"
+if "prov_prioritario" in dfp.columns:
+    prio_local = col_l2.radio(
+        "Proveedor Prioritario (local)",
+        options=["Todos", "Prioritario", "No Prioritario"],
+        horizontal=True, index=0
+    )
+
+def _apply_local_filters(dfin: pd.DataFrame) -> pd.DataFrame:
+    out = dfin
+    if "cuenta_especial" in out.columns:
+        if ce_local == "Cuenta Especial":
+            out = out[out["cuenta_especial"] == True]
+        elif ce_local == "No Cuenta Especial":
+            out = out[out["cuenta_especial"] == False]
+    if "prov_prioritario" in out.columns:
+        if prio_local == "Prioritario":
+            out = out[out["prov_prioritario"] == True]
+        elif prio_local == "No Prioritario":
+            out = out[out["prov_prioritario"] == False]
+    return out
+
+dfp_f = _apply_local_filters(dfp)
+
+# -------- Parámetros de Ranking --------
+col_r1, col_r2 = st.columns([1,3])
+top_n = col_r1.slider("Seleccionar Top N", 5, 50, 20, 1)
+orden_metric = col_r2.radio(
+    "Ordenar por:",
+    ["Monto Contabilizado","Monto Pagado","Cantidad Documentos"],
+    horizontal=True, index=0
+)
+
+# -------- Agregaciones --------
+def _agg_base(df_in: pd.DataFrame, group_col: str) -> pd.DataFrame:
+    """
+    Devuelve agregación por grupo con:
+      - Monto Contabilizado (antes Autorizado) / Monto Pagado / Cantidad Documentos
+      - Cantidad Prioritario / % Prioritario (1 decimal)
+      - Cantidad Cuenta Especial / % Cuenta Especial (1 decimal)
+      - Mayoría: Proveedor Prioritario (Sí/No), Cuenta Especial (Sí/No)
+    """
+    if df_in.empty:
+        return pd.DataFrame(columns=[
+            group_col, "Monto Contabilizado","Monto Pagado","Cantidad Documentos",
+            "Cantidad Prioritario","% Prioritario",
+            "Cantidad Cuenta Especial","% Cuenta Especial",
+            "Proveedor Prioritario","Cuenta Especial"
+        ])
+
+    g = (df_in
+         .assign(
+             prov_prioritario=df_in.get("prov_prioritario", False).astype(bool),
+             cuenta_especial=df_in.get("cuenta_especial", False).astype(bool),
+             monto_autorizado=pd.to_numeric(df_in.get("monto_autorizado", 0.0), errors="coerce").fillna(0.0),
+             monto_pagado=pd.to_numeric(df_in.get("monto_pagado", 0.0), errors="coerce").fillna(0.0),
+         )
+         .groupby(group_col, dropna=False)
+         .agg(
+             **{
+                 "Monto Contabilizado": ("monto_autorizado", "sum"),
+                 "Monto Pagado": ("monto_pagado", "sum"),
+                 "Cantidad Documentos": (group_col, "count"),
+                 "Cantidad Prioritario": ("prov_prioritario", "sum"),
+                 "Cantidad Cuenta Especial": ("cuenta_especial", "sum"),
+             }
+         )
+         .reset_index()
+    )
+
+    # % internos al grupo (1 decimal)
+    g["% Prioritario"] = np.where(
+        g["Cantidad Documentos"] > 0,
+        (g["Cantidad Prioritario"] / g["Cantidad Documentos"]) * 100.0, 0.0
+    ).round(1)
+
+    g["% Cuenta Especial"] = np.where(
+        g["Cantidad Documentos"] > 0,
+        (g["Cantidad Cuenta Especial"] / g["Cantidad Documentos"]) * 100.0, 0.0
+    ).round(1)
+
+    # Mayoría (≥ 50%)
+    g["Proveedor Prioritario"] = g["% Prioritario"].apply(lambda p: "Sí" if p >= 50.0 else "No")
+    g["Cuenta Especial"] = g["% Cuenta Especial"].apply(lambda p: "Sí" if p >= 50.0 else "No")
+
+    # Orden final
+    g = g.sort_values(orden_metric, ascending=False).reset_index(drop=True)
+    return g
+
+def agregar_ranking(df_in: pd.DataFrame, group_col: str, nombre_col: str) -> pd.DataFrame:
+    agg = _agg_base(df_in, group_col)
+    agg = agg.rename(columns={group_col: nombre_col})
+    agg = agg.head(top_n)
+    # Orden amigable de columnas
+    cols = [
+        nombre_col,
+        "Monto Contabilizado","Monto Pagado","Cantidad Documentos",
+        "Cantidad Prioritario","% Prioritario",
+        "Cantidad Cuenta Especial","% Cuenta Especial",
+        "Proveedor Prioritario","Cuenta Especial"
+    ]
+    agg = agg.reindex(columns=cols)
+    return agg
+
+def _format_percent_cols_for_display(df_in: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    df_disp = df_in.copy()
+    for c in cols:
+        if c in df_disp.columns:
+            df_disp[c] = df_disp[c].apply(lambda v: f"{v:.1f}%" if pd.notnull(v) else v)
+    return df_disp
+
+def _format_money_cols_for_display(df_in: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """
+    Aplica formato contable local (usa lib_common.money):
+      - Signo $,
+      - Miles con punto,
+      - Decimales con coma (si aplica).
+    Solo para mostrar en Streamlit.
+    """
+    df_disp = df_in.copy()
+    for c in cols:
+        if c in df_disp.columns:
+            df_disp[c] = df_disp[c].apply(lambda v: money(v) if pd.notnull(v) else v)
+    return df_disp
+
+def _style_headers(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
+    """
+    Resalta encabezados (azul rey, texto blanco), agranda fuente (FONT_SIZE),
+    y alinea valores a la derecha (estilo contable). No afecta exportación.
+    """
+    if isinstance(df_disp, pd.DataFrame):
+        sty = df_disp.style
+    else:
+        sty = df_disp
+
+    sty = sty.set_table_styles([
+        {"selector": "th", "props": [
+            ("background-color", HEADER_BG),
+            ("color", HEADER_FG),
+            ("font-weight", "bold"),
+            ("font-size", FONT_SIZE),
+            ("text-align", "center")
+        ]},
+        {"selector": "td", "props": [
+            ("font-size", FONT_SIZE),
+            ("text-align", "right")
+        ]}
+    ], overwrite=False)
+
+    return sty
+
+# -------- Explicación de la regla --------
+st.markdown("---")
+st.info("**Nota:** Un proveedor o centro se clasifica como *Prioritario* o *Cuenta Especial* = 'Sí' "
+        "cuando el **50% o más** de sus documentos cumplen con esa condición en el período analizado. "
+        "Las métricas y porcentajes reflejan el estado **actual** según los filtros globales y locales.")
+
+# -------- Top Proveedores --------
+st.markdown("---")
+st.subheader("Top Proveedores")
+prov = agregar_ranking(dfp_f, "prr_razon_social", "Razón Social")
+# Formato de pantalla (no afecta Excel)
+prov_disp = _format_percent_cols_for_display(prov, ["% Prioritario", "% Cuenta Especial"])
+prov_disp = _format_money_cols_for_display(prov_disp, ["Monto Contabilizado", "Monto Pagado"])
+style_table(_style_headers(prov_disp))
+st.download_button(
+    "⬇️ Descargar Ranking de Proveedores",
+    data=excel_bytes_single(prov, "RankingProveedores"),
+    file_name="ranking_proveedores.xlsx"
+)
+
+# -------- Top Centros de Costo --------
+st.markdown("---")
+st.subheader("Top Centros de Costo")
+if "nombre_centro_costo" in dfp_f.columns:
+    cc = agregar_ranking(dfp_f, "nombre_centro_costo", "Centro de Costo")
+    cc_disp = _format_percent_cols_for_display(cc, ["% Prioritario", "% Cuenta Especial"])
+    cc_disp = _format_money_cols_for_display(cc_disp, ["Monto Contabilizado", "Monto Pagado"])
+    style_table(_style_headers(cc_disp))
+    st.download_button(
+        "⬇️ Descargar Ranking de Centros de Costo",
+        data=excel_bytes_single(cc, "RankingCC"),
+        file_name="ranking_cc.xlsx"
+    )
+else:
+    cc = None
+    st.info("No hay datos de 'Centro de Costo' en la base actual.")
+
+# -------- Resumen Global (para Excel) --------
+def _resumen_dim(df_in: pd.DataFrame, flag_col: str, nombre_si: str, nombre_no: str) -> pd.DataFrame:
+    if flag_col not in df_in.columns:
+        return pd.DataFrame(columns=[
+            "Categoría", "Cantidad Documentos", "Monto Contabilizado", "Monto Pagado",
+            "% Docs Total","% Monto Contab. Total","% Monto Pag. Total"
+        ])
+
+    tmp = df_in.assign(
+        monto_autorizado=pd.to_numeric(df_in.get("monto_autorizado", 0.0), errors="coerce").fillna(0.0),
+        monto_pagado=pd.to_numeric(df_in.get("monto_pagado", 0.0), errors="coerce").fillna(0.0),
+    )
+
+    total_docs = len(tmp)
+    total_aut = float(tmp["monto_autorizado"].sum())
+    total_pag = float(tmp["monto_pagado"].sum())
+
+    g = (tmp.groupby(flag_col)
+             .agg(
+                 **{
+                     "Cantidad Documentos": (flag_col, "count"),
+                     "Monto Contabilizado": ("monto_autorizado", "sum"),
+                     "Monto Pagado": ("monto_pagado", "sum"),
+                 }
+             )
+             .reset_index()
+             .replace({True: nombre_si, False: nombre_no})
+             .rename(columns={flag_col: "Categoría"})
+    )
+
+    # % sobre el total (1 decimal)
+    g["% Docs Total"] = np.where(total_docs>0, (g["Cantidad Documentos"]/total_docs)*100.0, 0.0).round(1)
+    g["% Monto Contab. Total"] = np.where(total_aut>0, (g["Monto Contabilizado"]/total_aut)*100.0, 0.0).round(1)
+    g["% Monto Pag. Total"] = np.where(total_pag>0, (g["Monto Pagado"]/total_pag)*100.0, 0.0).round(1)
+
+    # Orden amigable
+    cols = [
+        "Categoría","Cantidad Documentos","Monto Contabilizado","Monto Pagado",
+        "% Docs Total","% Monto Contab. Total","% Monto Pag. Total"
+    ]
+    g = g.reindex(columns=cols)
+    return g
+
+def resumen_global(dfin: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    out = {}
+    out["Resumen_Prioritario"] = _resumen_dim(dfin, "prov_prioritario", "Prioritario", "No Prioritario")
+    out["Resumen_CuentaEspecial"] = _resumen_dim(dfin, "cuenta_especial", "Cuenta Especial", "No Cuenta Especial")
+    return out
+
+# -------- Exportar todo a Excel (multi-hoja) --------
+st.markdown("---")
+st.subheader("Exportar Resultados de Rankings a Excel")
+
+sheets = {"RankingProveedores": prov}
+if cc is not None:
+    sheets["RankingCC"] = cc
+sheets.update(resumen_global(dfp_f))
+
+st.download_button(
+    "⬇️ Descargar Excel Completo de Rankings",
+    data=excel_bytes_multi(sheets),
+    file_name="rankings_completo.xlsx"
+)
