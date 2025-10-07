@@ -56,10 +56,16 @@ def _segment_card(title: str, primary: str, stats: list[tuple[str, str]]) -> str
 def _render_kpi_stat_cards(items: list[tuple[str, str]]) -> None:
     if not items:
         return
-    # Reutilizamos _metric_card para heredar la clase "app-card" y asegurar el mismo acabado.
-    cards = [_metric_card(label, value) for label, value in items]
+    cards = []
+    for label, value in items:
+        cards.append(
+            "<article class=\"app-kpi-card\">"
+            f"<span class=\"app-kpi-card__label\">{html.escape(label)}</span>"
+            f"<span class=\"app-kpi-card__value\">{html.escape(value)}</span>"
+            "</article>"
+        )
     st.markdown(
-        '<div class="app-card-grid">' + "".join(cards) + '</div>',
+        '<div class="app-kpi-cards">' + "".join(cards) + '</div>',
         unsafe_allow_html=True,
     )
 
@@ -131,10 +137,20 @@ df_no_pag  = df[df["estado_pago"] != "pagada"].copy()
 # ===================== KPIs principales =====================
 st.subheader("Metricas principales del periodo")
 
-# Recuperamos filtros locales previos para sincronizar la fila LOCAL de Pagadas con su sección.
+# Recuperamos filtros locales previos para sincronizar las tarjetas superiores con la sección Pagadas.
 ce_local_state = st.session_state.get("ce_local", "Todas")
 prio_local_state = st.session_state.get("prio_local", "Todos")
 max_dias_pag_state = st.session_state.get("max_dias_pag", 100)
+
+def _subset_by_prio(dfin: pd.DataFrame, choice: str) -> pd.DataFrame:
+    if "prov_prioritario" not in dfin.columns:
+        return dfin
+    if choice == "Prioritario":
+        return dfin[dfin["prov_prioritario"] == True]
+    if choice == "No Prioritario":
+        return dfin[dfin["prov_prioritario"] == False]
+    return dfin
+
 
 def _apply_locals(dfin: pd.DataFrame, ce_choice: str, prio_choice: str) -> pd.DataFrame:
     d = _subset_by_ce(dfin, ce_choice)  # <-- CE robusto
@@ -145,19 +161,19 @@ def _apply_locals(dfin: pd.DataFrame, ce_choice: str, prio_choice: str) -> pd.Da
             d = d[d["prov_prioritario"] == False]
     return d
 
-def _safe_to_datetime(values: pd.Series | None) -> pd.Series:
-    """Devuelve una serie datetime vacía cuando falta la columna, evitando fallas posteriores."""
-    if values is None:
-        return pd.Series(dtype="datetime64[ns]")
-    return pd.to_datetime(values, errors="coerce")
+prio_local_kpi = st.radio(
+    "Filtrar prioritario (solo para estos indicadores)",
+    ["Todos", "Prioritario", "No Prioritario"],
+    horizontal=True, index=0
+)
 
-df_kpi = df  # Datos GLOBALes para métricas agregadas
+df_kpi = _subset_by_prio(df, prio_local_kpi)
 kpi = compute_kpis(df_kpi)
 
 # ===== Base de pagos contabilizados (para DSO/TFC/TPC y promedios globales) =====
 df_pag_contab = df[(df["estado_pago"] == "pagada") &
                    (pd.to_datetime(df.get("fecha_cc"), errors="coerce").notna())].copy()
-df_kpi_contab = df_pag_contab  # Mantiene el cálculo 100% GLOBAL
+df_kpi_contab = _subset_by_prio(df_pag_contab, prio_local_kpi)
 
 fac_k = pd.to_datetime(df_kpi_contab.get("fac_fecha_factura"), errors="coerce")
 cc_k = pd.to_datetime(df_kpi_contab.get("fecha_cc"), errors="coerce")
@@ -181,78 +197,13 @@ fact_pag = pd.to_numeric(df_kpi.get("fac_monto_total", 0.0), errors="coerce").wh
 contab_pag = pd.to_numeric(df_kpi.get("monto_autorizado", 0.0), errors="coerce").where(mask_base, other=0.0).sum()
 gap1_pct = (contab_pag / fact_pag - 1.0) * 100 if fact_pag > 0 else 0.0
 
-# Reutilizamos _metric_card para que las 6 tarjetas compartan el mismo acabado azul profesional.
-df_pag_contab_loc = _apply_locals(df_pag_contab, ce_local_state, prio_local_state)
-
-# Centralizamos el cálculo LOCAL en un helper para asegurar valores por defecto
-# cuando la base filtrada queda vacía y evitar NameError.
-def _local_pagadas_metrics(df_local: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series, float, float, float]:
-    fac_l = _safe_to_datetime(df_local.get("fac_fecha_factura"))
-    cc_l = _safe_to_datetime(df_local.get("fecha_cc"))
-    pago_l = _safe_to_datetime(df_local.get("fecha_pagado"))
-
-    def _safe_days(end: pd.Series, start: pd.Series) -> pd.Series:
-        if end.empty and start.empty:
-            return pd.Series(dtype=float)
-        try:
-            return (end - start).dt.days
-        except Exception:
-            return pd.Series(dtype=float)
-
-    dso_loc = _safe_days(pago_l, fac_l)
-    tfc_loc = _safe_days(cc_l, fac_l)
-    tpc_loc = _safe_days(pago_l, cc_l)
-
-    mean_dso_loc = float(np.nanmean(dso_loc)) if dso_loc.notna().any() else np.nan
-    mean_tfc_loc = float(np.nanmean(tfc_loc)) if tfc_loc.notna().any() else np.nan
-    mean_tpc_loc = float(np.nanmean(tpc_loc)) if tpc_loc.notna().any() else np.nan
-
-    return dso_loc, tfc_loc, tpc_loc, mean_dso_loc, mean_tfc_loc, mean_tpc_loc
-
-dso_loc, tfc_loc, tpc_loc, mean_dso_loc, mean_tfc_loc, mean_tpc_loc = _local_pagadas_metrics(df_pag_contab_loc)
-
-def _format_promedio(valor: float) -> str:
-    return f"{one_decimal(valor)} dias" if pd.notna(valor) else "s/d"
-
-# Eliminamos la antigua fila duplicada y concentramos las seis tarjetas principales en este bloque azul.
-summary_cards: list[str] = []
-
-# Fila GLOBAL (ignora filtros locales y muestra el promedio general).
-summary_cards.extend([
-    _metric_card(
-        "DSO (emision-pago)",
-        _format_promedio(mean_dso_kpi),
-        caption=f"Promedio local: {_format_promedio(mean_dso_loc)}",
-    ),
-    _metric_card(
-        "TFC (emision-contab.)",
-        _format_promedio(mean_tfc_kpi),
-        caption=f"Promedio local: {_format_promedio(mean_tfc_loc)}",
-    ),
-    _metric_card(
-        "TPC (contab.-pago)",
-        _format_promedio(mean_tpc_kpi),
-        caption=f"Promedio local: {_format_promedio(mean_tpc_loc)}",
-    ),
-])
-
-dso_num = pd.to_numeric(dso_loc, errors="coerce")
-dso_valid = dso_num[dso_num.notna()]
-count_le_30 = int((dso_valid <= 30).sum()) if not dso_valid.empty else 0
-count_mid = int(((dso_valid > 30) & (dso_valid <= max_dias_pag_state)).sum()) if not dso_valid.empty else 0
-count_gt = int((dso_valid > max_dias_pag_state).sum()) if not dso_valid.empty else 0
-
-# Fila LOCAL (respeta filtros locales de Pagadas, incluida la separación por días).
-summary_cards.extend([
-    _metric_card("Pagadas ≤ 30 días", f"{count_le_30:,}"),
-    _metric_card(f"Pagadas 31–{max_dias_pag_state} días", f"{count_mid:,}"),
-    _metric_card(f"Pagadas > {max_dias_pag_state} días", f"{count_gt:,}"),
-])
-
-st.markdown(
-    '<div class="app-card-grid">' + "".join(summary_cards) + '</div>',
-    unsafe_allow_html=True,
-)
+# Eliminamos la grilla duplicada de KPI; los valores de DSO/TFC/TPC se mostrarán una sola vez en la sección de Pagadas.
+metric_cards = [
+    _metric_card("Monto total facturado", money(kpi["total_facturado"])),
+    _metric_card("Total pagado (autorizado)", money(kpi["total_pagado_aut"])),
+    _metric_card("Gap-1 %", f"{one_decimal(gap1_pct)}%"),
+]
+st.markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>', unsafe_allow_html=True)
 
 st.markdown(
     f"""
@@ -319,6 +270,107 @@ prio_local = ctrl_row1[3].radio("Prioritario (local)", ["Todos","Prioritario","N
 # ===================== PAGADAS (pagos contabilizados) =====================
 st.markdown("### Pagadas (base: pagos contabilizados)")
 
+# Reutilizamos _metric_card para que las 6 tarjetas compartan el estilo azul definido en styles/theme.css.
+def _format_promedio(valor: float) -> str:
+    return f"{one_decimal(valor)} dias" if pd.notna(valor) else "s/d"
+
+
+summary_cards: list[str] = []
+summary_cards.extend([
+    _metric_card(
+        "DSO (emision-pago)",
+        _format_promedio(mean_dso_loc),
+        caption=f"Promedio global: {_format_promedio(mean_dso_kpi)}",
+    ),
+    _metric_card(
+        "TFC (emision-contab.)",
+        _format_promedio(mean_tfc_loc),
+        caption=f"Promedio global: {_format_promedio(mean_tfc_kpi)}",
+    ),
+    _metric_card(
+        "TPC (contab.-pago)",
+        _format_promedio(mean_tpc_loc),
+        caption=f"Promedio global: {_format_promedio(mean_tpc_kpi)}",
+    ),
+])
+
+dso_num = pd.to_numeric(dso_loc, errors="coerce")
+dso_valid = dso_num[dso_num.notna()]
+count_le_30 = int((dso_valid <= 30).sum()) if not dso_valid.empty else 0
+count_mid = int(((dso_valid > 30) & (dso_valid <= max_dias_pag)).sum()) if not dso_valid.empty else 0
+count_gt = int((dso_valid > max_dias_pag).sum()) if not dso_valid.empty else 0
+
+summary_cards.extend([
+    _metric_card("Pagadas ≤ 30 días", f"{count_le_30:,}"),
+    _metric_card(f"Pagadas 31–{max_dias_pag} días", f"{count_mid:,}"),
+    _metric_card(f"Pagadas > {max_dias_pag} días", f"{count_gt:,}"),
+])
+
+st.markdown(
+    '<div class="app-card-grid">' + "".join(summary_cards) + '</div>',
+    unsafe_allow_html=True,
+)
+
+# Reutilizamos _segment_card para heredar la clase "app-card" (styles/theme.css) y lograr el mismo acabado visual.
+def _format_promedio(valor: float) -> str:
+    return f"{one_decimal(valor)} dias" if pd.notna(valor) else "s/d"
+
+
+def _build_pagadas_cards() -> list[str]:
+    """Genera tarjetas de Pagadas con el mismo estilo que 'Métricas por cuenta especial'."""
+    configuracion = [
+        ("DSO (emision-pago)", mean_dso_loc, mean_dso_kpi, dso_loc),
+        ("TFC (emision-contab.)", mean_tfc_loc, mean_tfc_kpi, tfc_loc),
+        ("TPC (contab.-pago)", mean_tpc_loc, mean_tpc_kpi, tpc_loc),
+    ]
+    cards: list[str] = []
+    for titulo, promedio_local, promedio_global, serie in configuracion:
+        serie_num = pd.to_numeric(serie, errors="coerce")
+        if not serie_num.notna().any():
+            continue
+        stats = [
+            ("Promedio global", _format_promedio(promedio_global)),
+            ("Documentos", f"{int(serie_num.notna().sum()):,}"),
+        ]
+        # Cada tarjeta replica la jerarquía tipográfica al reutilizar app-card__title/app-card__value.
+        cards.append(_segment_card(titulo, _format_promedio(promedio_local), stats))
+    return cards
+
+
+pagadas_cards = [card for card in _build_pagadas_cards() if card]
+if any(pagadas_cards):
+    st.markdown('<div class="app-card-grid">' + "".join(pagadas_cards) + '</div>', unsafe_allow_html=True)
+
+# Reutilizamos _segment_card para heredar la clase "app-card" (styles/theme.css) y lograr el mismo acabado visual.
+def _format_promedio(valor: float) -> str:
+    return f"{one_decimal(valor)} dias" if pd.notna(valor) else "s/d"
+
+
+def _build_pagadas_cards() -> list[str]:
+    """Genera tarjetas de Pagadas con el mismo estilo que 'Métricas por cuenta especial'."""
+    configuracion = [
+        ("DSO (emision-pago)", mean_dso_loc, mean_dso_kpi, dso_loc),
+        ("TFC (emision-contab.)", mean_tfc_loc, mean_tfc_kpi, tfc_loc),
+        ("TPC (contab.-pago)", mean_tpc_loc, mean_tpc_kpi, tpc_loc),
+    ]
+    cards: list[str] = []
+    for titulo, promedio_local, promedio_global, serie in configuracion:
+        serie_num = pd.to_numeric(serie, errors="coerce")
+        if not serie_num.notna().any():
+            continue
+        stats = [
+            ("Promedio global", _format_promedio(promedio_global)),
+            ("Documentos", f"{int(serie_num.notna().sum()):,}"),
+        ]
+        # Cada tarjeta replica la jerarquía tipográfica al reutilizar app-card__title/app-card__value.
+        cards.append(_segment_card(titulo, _format_promedio(promedio_local), stats))
+    return cards
+
+
+pagadas_cards = [card for card in _build_pagadas_cards() if card]
+if any(pagadas_cards):
+    st.markdown('<div class="app-card-grid">' + "".join(pagadas_cards) + '</div>', unsafe_allow_html=True)
+
 def _hist_with_two_means(series: pd.Series, nbins: int, color: str,
                          xmax: int, title: str, mean_global: float, mean_local: float):
     vals = pd.to_numeric(series, errors="coerce")
@@ -368,7 +420,13 @@ def _validity_note(series_days: pd.Series, label: str):
     )
 
 # DSO ancho completo + contadores + P50/P75/P90
-if not dso_valid.empty:
+if dso_loc.notna().any():
+    dso_num = pd.to_numeric(dso_loc, errors="coerce")
+    _render_kpi_stat_cards([
+        ("Pagadas ≤ 30 días", f"{int((dso_num<=30).sum()):,}"),
+        (f"Pagadas 31–{max_dias_pag} días", f"{int(((dso_num>30)&(dso_num<=max_dias_pag)).sum()):,}"),
+        (f"Pagadas > {max_dias_pag} días", f"{int((dso_num>max_dias_pag).sum()):,}"),
+    ])
 
     fig_dso, _ = _hist_with_two_means(dso_loc, bins_pag, BLUE, max_dias_pag,
                                       "Emisión → Pago (DSO)",
