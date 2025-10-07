@@ -177,6 +177,62 @@ body {
   color: var(--app-success);
 }
 
+.app-kpi-cards {
+  display: grid;
+  gap: 1rem;
+  margin: 1rem 0 1.4rem;
+}
+
+@media (min-width: 768px) {
+  .app-kpi-cards {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+.app-kpi-card {
+  position: relative;
+  overflow: hidden;
+  padding: 1.35rem 1.5rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(145deg, rgba(79, 156, 255, 0.16), rgba(19, 37, 66, 0.65));
+  border: 1px solid rgba(79, 156, 255, 0.24);
+  box-shadow: 0 20px 40px rgba(9, 24, 46, 0.3);
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+}
+
+.app-kpi-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 55%);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.app-kpi-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(79, 156, 255, 0.45);
+  box-shadow: 0 28px 46px rgba(12, 28, 52, 0.35);
+}
+
+.app-kpi-card__label {
+  position: relative;
+  display: block;
+  font-size: 0.82rem;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+  margin-bottom: 0.65rem;
+}
+
+.app-kpi-card__value {
+  position: relative;
+  font-size: 2.15rem;
+  font-weight: 600;
+  color: var(--app-text);
+  line-height: 1.1;
+}
+
 .stDownloadButton button,
 .stButton button {
   background: linear-gradient(135deg, rgba(79, 156, 255, 0.9), rgba(69, 130, 230, 0.9));
