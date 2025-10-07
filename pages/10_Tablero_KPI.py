@@ -93,7 +93,11 @@ def _render_percentile_cards(items: list[tuple[str, str, str | None]]):
    # línea promedio LOCAL
 
 st.set_page_config(page_title="Tablero KPI", layout="wide")
-header_ui("Métricas de Pagos y Ciclo de Facturas", current_page="KPI")
+header_ui(
+    "Métricas de Pagos y Ciclo de Facturas",
+    current_page="Resumen facturas",
+    subtitle="Resumen de indicadores generales de facturas",
+)
 
 # ===================== Helpers CE robusto =====================
 TRUE_TOKENS = {"true", "1", "si", "sí", "s", "y", "t", "yes", "x"}
