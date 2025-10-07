@@ -281,6 +281,36 @@ mean_dso_loc = float(np.nanmean(dso_loc)) if dso_loc.notna().any() else np.nan
 mean_tfc_loc = float(np.nanmean(tfc_loc)) if tfc_loc.notna().any() else np.nan
 mean_tpc_loc = float(np.nanmean(tpc_loc)) if tpc_loc.notna().any() else np.nan
 
+# Reutilizamos _segment_card para heredar la clase "app-card" (styles/theme.css) y lograr el mismo acabado visual.
+def _format_promedio(valor: float) -> str:
+    return f"{one_decimal(valor)} dias" if pd.notna(valor) else "s/d"
+
+
+def _build_pagadas_cards() -> list[str]:
+    """Genera tarjetas de Pagadas con el mismo estilo que 'Métricas por cuenta especial'."""
+    configuracion = [
+        ("DSO (emision-pago)", mean_dso_loc, mean_dso_kpi, dso_loc),
+        ("TFC (emision-contab.)", mean_tfc_loc, mean_tfc_kpi, tfc_loc),
+        ("TPC (contab.-pago)", mean_tpc_loc, mean_tpc_kpi, tpc_loc),
+    ]
+    cards: list[str] = []
+    for titulo, promedio_local, promedio_global, serie in configuracion:
+        serie_num = pd.to_numeric(serie, errors="coerce")
+        if not serie_num.notna().any():
+            continue
+        stats = [
+            ("Promedio global", _format_promedio(promedio_global)),
+            ("Documentos", f"{int(serie_num.notna().sum()):,}"),
+        ]
+        # Cada tarjeta replica la jerarquía tipográfica al reutilizar app-card__title/app-card__value.
+        cards.append(_segment_card(titulo, _format_promedio(promedio_local), stats))
+    return cards
+
+
+pagadas_cards = [card for card in _build_pagadas_cards() if card]
+if any(pagadas_cards):
+    st.markdown('<div class="app-card-grid">' + "".join(pagadas_cards) + '</div>', unsafe_allow_html=True)
+
 def _hist_with_two_means(series: pd.Series, nbins: int, color: str,
                          xmax: int, title: str, mean_global: float, mean_local: float):
     vals = pd.to_numeric(series, errors="coerce")
