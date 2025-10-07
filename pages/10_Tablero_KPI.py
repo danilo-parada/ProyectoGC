@@ -53,6 +53,25 @@ def _segment_card(title: str, primary: str, stats: list[tuple[str, str]]) -> str
     )
 
 
+def _range_card(title: str, value: str) -> str:
+    return (
+        '<div class="app-range-card">'
+        f'<div class="app-range-card__title">{html.escape(title)}</div>'
+        f'<div class="app-range-card__value">{html.escape(value)}</div>'
+        '</div>'
+    )
+
+
+def _render_range_cards(items: list[tuple[str, str]]):
+    if not items:
+        return
+    cards_html = "".join(_range_card(title, value) for title, value in items)
+    st.markdown(
+        '<div class="app-range-card-grid">' + cards_html + '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _render_percentile_cards(items: list[tuple[str, str, str | None]]):
     if not items:
         return
@@ -315,10 +334,11 @@ def _validity_note(series_days: pd.Series, label: str):
 # DSO ancho completo + contadores + P50/P75/P90
 if dso_loc.notna().any():
     dso_num = pd.to_numeric(dso_loc, errors="coerce")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Pagadas ≤ 30 días", f"{int((dso_num<=30).sum()):,}")
-    c2.metric(f"Pagadas 31–{max_dias_pag} días", f"{int(((dso_num>30)&(dso_num<=max_dias_pag)).sum()):,}")
-    c3.metric(f"Pagadas > {max_dias_pag} días", f"{int((dso_num>max_dias_pag).sum()):,}")
+    _render_range_cards([
+        ("Pagadas ≤ 30 días", f"{int((dso_num <= 30).sum()):,}"),
+        (f"Pagadas 31–{max_dias_pag} días", f"{int(((dso_num > 30) & (dso_num <= max_dias_pag)).sum()):,}"),
+        (f"Pagadas > {max_dias_pag} días", f"{int((dso_num > max_dias_pag).sum()):,}"),
+    ])
 
     fig_dso, _ = _hist_with_two_means(dso_loc, bins_pag, BLUE, max_dias_pag,
                                       "Emisión → Pago (DSO)",
