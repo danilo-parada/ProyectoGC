@@ -56,16 +56,10 @@ def _segment_card(title: str, primary: str, stats: list[tuple[str, str]]) -> str
 def _render_kpi_stat_cards(items: list[tuple[str, str]]) -> None:
     if not items:
         return
-    cards = []
-    for label, value in items:
-        cards.append(
-            "<article class=\"app-kpi-card\">"
-            f"<span class=\"app-kpi-card__label\">{html.escape(label)}</span>"
-            f"<span class=\"app-kpi-card__value\">{html.escape(value)}</span>"
-            "</article>"
-        )
+    # Reutilizamos _metric_card para heredar la clase "app-card" y asegurar el mismo acabado.
+    cards = [_metric_card(label, value) for label, value in items]
     st.markdown(
-        '<div class="app-kpi-cards">' + "".join(cards) + '</div>',
+        '<div class="app-card-grid">' + "".join(cards) + '</div>',
         unsafe_allow_html=True,
     )
 
@@ -137,28 +131,33 @@ df_no_pag  = df[df["estado_pago"] != "pagada"].copy()
 # ===================== KPIs principales =====================
 st.subheader("Metricas principales del periodo")
 
-def _subset_by_prio(dfin: pd.DataFrame, choice: str) -> pd.DataFrame:
-    if "prov_prioritario" not in dfin.columns:
-        return dfin
-    if choice == "Prioritario":
-        return dfin[dfin["prov_prioritario"] == True]
-    if choice == "No Prioritario":
-        return dfin[dfin["prov_prioritario"] == False]
-    return dfin
+# Recuperamos filtros locales previos para sincronizar la fila LOCAL de Pagadas con su sección.
+ce_local_state = st.session_state.get("ce_local", "Todas")
+prio_local_state = st.session_state.get("prio_local", "Todos")
+max_dias_pag_state = st.session_state.get("max_dias_pag", 100)
 
-prio_local_kpi = st.radio(
-    "Filtrar prioritario (solo para estos indicadores)",
-    ["Todos", "Prioritario", "No Prioritario"],
-    horizontal=True, index=0
-)
+def _apply_locals(dfin: pd.DataFrame, ce_choice: str, prio_choice: str) -> pd.DataFrame:
+    d = _subset_by_ce(dfin, ce_choice)  # <-- CE robusto
+    if "prov_prioritario" in d.columns:
+        if prio_choice == "Prioritario":
+            d = d[d["prov_prioritario"] == True]
+        elif prio_choice == "No Prioritario":
+            d = d[d["prov_prioritario"] == False]
+    return d
 
-df_kpi = _subset_by_prio(df, prio_local_kpi)
+def _safe_to_datetime(values: pd.Series | None) -> pd.Series:
+    """Devuelve una serie datetime vacía cuando falta la columna, evitando fallas posteriores."""
+    if values is None:
+        return pd.Series(dtype="datetime64[ns]")
+    return pd.to_datetime(values, errors="coerce")
+
+df_kpi = df  # Datos GLOBALes para métricas agregadas
 kpi = compute_kpis(df_kpi)
 
 # ===== Base de pagos contabilizados (para DSO/TFC/TPC y promedios globales) =====
 df_pag_contab = df[(df["estado_pago"] == "pagada") &
                    (pd.to_datetime(df.get("fecha_cc"), errors="coerce").notna())].copy()
-df_kpi_contab = _subset_by_prio(df_pag_contab, prio_local_kpi)
+df_kpi_contab = df_pag_contab  # Mantiene el cálculo 100% GLOBAL
 
 fac_k = pd.to_datetime(df_kpi_contab.get("fac_fecha_factura"), errors="coerce")
 cc_k = pd.to_datetime(df_kpi_contab.get("fecha_cc"), errors="coerce")
@@ -182,15 +181,78 @@ fact_pag = pd.to_numeric(df_kpi.get("fac_monto_total", 0.0), errors="coerce").wh
 contab_pag = pd.to_numeric(df_kpi.get("monto_autorizado", 0.0), errors="coerce").where(mask_base, other=0.0).sum()
 gap1_pct = (contab_pag / fact_pag - 1.0) * 100 if fact_pag > 0 else 0.0
 
-metric_cards = [
-    _metric_card("Monto total facturado", money(kpi["total_facturado"])),
-    _metric_card("Total pagado (autorizado)", money(kpi["total_pagado_aut"])),
-    _metric_card("DSO (emision-pago)", f"{one_decimal(mean_dso_kpi)} dias"),
-    _metric_card("TFC (emision-contab.)", f"{one_decimal(mean_tfc_kpi)} dias"),
-    _metric_card("TPC (contab.-pago)", f"{one_decimal(mean_tpc_kpi)} dias"),
-    _metric_card("Gap-1 %", f"{one_decimal(gap1_pct)}%"),
-]
-st.markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>', unsafe_allow_html=True)
+# Reutilizamos _metric_card para que las 6 tarjetas compartan el mismo acabado azul profesional.
+df_pag_contab_loc = _apply_locals(df_pag_contab, ce_local_state, prio_local_state)
+
+# Centralizamos el cálculo LOCAL en un helper para asegurar valores por defecto
+# cuando la base filtrada queda vacía y evitar NameError.
+def _local_pagadas_metrics(df_local: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series, float, float, float]:
+    fac_l = _safe_to_datetime(df_local.get("fac_fecha_factura"))
+    cc_l = _safe_to_datetime(df_local.get("fecha_cc"))
+    pago_l = _safe_to_datetime(df_local.get("fecha_pagado"))
+
+    def _safe_days(end: pd.Series, start: pd.Series) -> pd.Series:
+        if end.empty and start.empty:
+            return pd.Series(dtype=float)
+        try:
+            return (end - start).dt.days
+        except Exception:
+            return pd.Series(dtype=float)
+
+    dso_loc = _safe_days(pago_l, fac_l)
+    tfc_loc = _safe_days(cc_l, fac_l)
+    tpc_loc = _safe_days(pago_l, cc_l)
+
+    mean_dso_loc = float(np.nanmean(dso_loc)) if dso_loc.notna().any() else np.nan
+    mean_tfc_loc = float(np.nanmean(tfc_loc)) if tfc_loc.notna().any() else np.nan
+    mean_tpc_loc = float(np.nanmean(tpc_loc)) if tpc_loc.notna().any() else np.nan
+
+    return dso_loc, tfc_loc, tpc_loc, mean_dso_loc, mean_tfc_loc, mean_tpc_loc
+
+dso_loc, tfc_loc, tpc_loc, mean_dso_loc, mean_tfc_loc, mean_tpc_loc = _local_pagadas_metrics(df_pag_contab_loc)
+
+def _format_promedio(valor: float) -> str:
+    return f"{one_decimal(valor)} dias" if pd.notna(valor) else "s/d"
+
+# Eliminamos la antigua fila duplicada y concentramos las seis tarjetas principales en este bloque azul.
+summary_cards: list[str] = []
+
+# Fila GLOBAL (ignora filtros locales y muestra el promedio general).
+summary_cards.extend([
+    _metric_card(
+        "DSO (emision-pago)",
+        _format_promedio(mean_dso_kpi),
+        caption=f"Promedio local: {_format_promedio(mean_dso_loc)}",
+    ),
+    _metric_card(
+        "TFC (emision-contab.)",
+        _format_promedio(mean_tfc_kpi),
+        caption=f"Promedio local: {_format_promedio(mean_tfc_loc)}",
+    ),
+    _metric_card(
+        "TPC (contab.-pago)",
+        _format_promedio(mean_tpc_kpi),
+        caption=f"Promedio local: {_format_promedio(mean_tpc_loc)}",
+    ),
+])
+
+dso_num = pd.to_numeric(dso_loc, errors="coerce")
+dso_valid = dso_num[dso_num.notna()]
+count_le_30 = int((dso_valid <= 30).sum()) if not dso_valid.empty else 0
+count_mid = int(((dso_valid > 30) & (dso_valid <= max_dias_pag_state)).sum()) if not dso_valid.empty else 0
+count_gt = int((dso_valid > max_dias_pag_state).sum()) if not dso_valid.empty else 0
+
+# Fila LOCAL (respeta filtros locales de Pagadas, incluida la separación por días).
+summary_cards.extend([
+    _metric_card("Pagadas ≤ 30 días", f"{count_le_30:,}"),
+    _metric_card(f"Pagadas 31–{max_dias_pag_state} días", f"{count_mid:,}"),
+    _metric_card(f"Pagadas > {max_dias_pag_state} días", f"{count_gt:,}"),
+])
+
+st.markdown(
+    '<div class="app-card-grid">' + "".join(summary_cards) + '</div>',
+    unsafe_allow_html=True,
+)
 
 st.markdown(
     f"""
@@ -254,32 +316,8 @@ if "cuenta_especial" in df.columns:
 prio_local = ctrl_row1[3].radio("Prioritario (local)", ["Todos","Prioritario","No Prioritario"],
                                 horizontal=True, index=0, key="prio_local")
 
-def _apply_locals(dfin: pd.DataFrame) -> pd.DataFrame:
-    d = _subset_by_ce(dfin, ce_local)  # <-- CE robusto
-    if "prov_prioritario" in d.columns:
-        if prio_local == "Prioritario":
-            d = d[d["prov_prioritario"] == True]
-        elif prio_local == "No Prioritario":
-            d = d[d["prov_prioritario"] == False]
-    return d
-
 # ===================== PAGADAS (pagos contabilizados) =====================
 st.markdown("### Pagadas (base: pagos contabilizados)")
-
-df_pag_contab_loc = _apply_locals(df_pag_contab)
-
-fac_l   = pd.to_datetime(df_pag_contab_loc.get("fac_fecha_factura"), errors="coerce")
-cc_l    = pd.to_datetime(df_pag_contab_loc.get("fecha_cc"), errors="coerce")
-pago_l  = pd.to_datetime(df_pag_contab_loc.get("fecha_pagado"), errors="coerce")
-
-dso_loc = (pago_l - fac_l).dt.days
-tfc_loc = (cc_l   - fac_l).dt.days
-tpc_loc = (pago_l - cc_l).dt.days
-
-# Promedios GLOBAL (fijos) ya calculados arriba; Promedios LOCAL (dependen de filtros locales)
-mean_dso_loc = float(np.nanmean(dso_loc)) if dso_loc.notna().any() else np.nan
-mean_tfc_loc = float(np.nanmean(tfc_loc)) if tfc_loc.notna().any() else np.nan
-mean_tpc_loc = float(np.nanmean(tpc_loc)) if tpc_loc.notna().any() else np.nan
 
 def _hist_with_two_means(series: pd.Series, nbins: int, color: str,
                          xmax: int, title: str, mean_global: float, mean_local: float):
@@ -330,13 +368,7 @@ def _validity_note(series_days: pd.Series, label: str):
     )
 
 # DSO ancho completo + contadores + P50/P75/P90
-if dso_loc.notna().any():
-    dso_num = pd.to_numeric(dso_loc, errors="coerce")
-    _render_kpi_stat_cards([
-        ("Pagadas ≤ 30 días", f"{int((dso_num<=30).sum()):,}"),
-        (f"Pagadas 31–{max_dias_pag} días", f"{int(((dso_num>30)&(dso_num<=max_dias_pag)).sum()):,}"),
-        (f"Pagadas > {max_dias_pag} días", f"{int((dso_num>max_dias_pag).sum()):,}"),
-    ])
+if not dso_valid.empty:
 
     fig_dso, _ = _hist_with_two_means(dso_loc, bins_pag, BLUE, max_dias_pag,
                                       "Emisión → Pago (DSO)",
@@ -429,7 +461,7 @@ mean_np_contab_sin_pago = float(np.nanmean((today - cc_np_g[(cc_np_g.notna()) & 
                           if ((cc_np_g.notna()) & (pag_np_g.isna())).any() else np.nan
 
 # Local (afectado por CE/Prioritario)
-df_no_pag_loc = _apply_locals(df_no_pag)
+df_no_pag_loc = _apply_locals(df_no_pag, ce_local, prio_local)
 
 fac_np = pd.to_datetime(df_no_pag_loc.get("fac_fecha_factura", pd.Series(dtype="datetime64[ns]")), errors="coerce")
 cc_np  = pd.to_datetime(df_no_pag_loc.get("fecha_cc", pd.Series(dtype="datetime64[ns]")), errors="coerce")
