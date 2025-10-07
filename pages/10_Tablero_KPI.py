@@ -182,12 +182,10 @@ fact_pag = pd.to_numeric(df_kpi.get("fac_monto_total", 0.0), errors="coerce").wh
 contab_pag = pd.to_numeric(df_kpi.get("monto_autorizado", 0.0), errors="coerce").where(mask_base, other=0.0).sum()
 gap1_pct = (contab_pag / fact_pag - 1.0) * 100 if fact_pag > 0 else 0.0
 
+# Eliminamos la grilla duplicada de KPI; los valores de DSO/TFC/TPC se mostrarán una sola vez en la sección de Pagadas.
 metric_cards = [
     _metric_card("Monto total facturado", money(kpi["total_facturado"])),
     _metric_card("Total pagado (autorizado)", money(kpi["total_pagado_aut"])),
-    _metric_card("DSO (emision-pago)", f"{one_decimal(mean_dso_kpi)} dias"),
-    _metric_card("TFC (emision-contab.)", f"{one_decimal(mean_tfc_kpi)} dias"),
-    _metric_card("TPC (contab.-pago)", f"{one_decimal(mean_tpc_kpi)} dias"),
     _metric_card("Gap-1 %", f"{one_decimal(gap1_pct)}%"),
 ]
 st.markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>', unsafe_allow_html=True)
@@ -280,6 +278,47 @@ tpc_loc = (pago_l - cc_l).dt.days
 mean_dso_loc = float(np.nanmean(dso_loc)) if dso_loc.notna().any() else np.nan
 mean_tfc_loc = float(np.nanmean(tfc_loc)) if tfc_loc.notna().any() else np.nan
 mean_tpc_loc = float(np.nanmean(tpc_loc)) if tpc_loc.notna().any() else np.nan
+
+# Reutilizamos _metric_card para que las 6 tarjetas compartan el estilo azul definido en styles/theme.css.
+def _format_promedio(valor: float) -> str:
+    return f"{one_decimal(valor)} dias" if pd.notna(valor) else "s/d"
+
+
+summary_cards: list[str] = []
+summary_cards.extend([
+    _metric_card(
+        "DSO (emision-pago)",
+        _format_promedio(mean_dso_loc),
+        caption=f"Promedio global: {_format_promedio(mean_dso_kpi)}",
+    ),
+    _metric_card(
+        "TFC (emision-contab.)",
+        _format_promedio(mean_tfc_loc),
+        caption=f"Promedio global: {_format_promedio(mean_tfc_kpi)}",
+    ),
+    _metric_card(
+        "TPC (contab.-pago)",
+        _format_promedio(mean_tpc_loc),
+        caption=f"Promedio global: {_format_promedio(mean_tpc_kpi)}",
+    ),
+])
+
+dso_num = pd.to_numeric(dso_loc, errors="coerce")
+dso_valid = dso_num[dso_num.notna()]
+count_le_30 = int((dso_valid <= 30).sum()) if not dso_valid.empty else 0
+count_mid = int(((dso_valid > 30) & (dso_valid <= max_dias_pag)).sum()) if not dso_valid.empty else 0
+count_gt = int((dso_valid > max_dias_pag).sum()) if not dso_valid.empty else 0
+
+summary_cards.extend([
+    _metric_card("Pagadas ≤ 30 días", f"{count_le_30:,}"),
+    _metric_card(f"Pagadas 31–{max_dias_pag} días", f"{count_mid:,}"),
+    _metric_card(f"Pagadas > {max_dias_pag} días", f"{count_gt:,}"),
+])
+
+st.markdown(
+    '<div class="app-card-grid">' + "".join(summary_cards) + '</div>',
+    unsafe_allow_html=True,
+)
 
 # Reutilizamos _segment_card para heredar la clase "app-card" (styles/theme.css) y lograr el mismo acabado visual.
 def _format_promedio(valor: float) -> str:
