@@ -13,7 +13,7 @@ from lib_report import excel_bytes_single, excel_bytes_multi
 # ================== Estilos globales de la tabla ==================
 HEADER_BG = "#003399"   # azul rey
 HEADER_FG = "#FFFFFF"   # blanco
-FONT_SIZE = "16px"      # <-- Ajusta aquí el tamaño de letra de TODA la tabla
+FONT_SIZE = "18px"      # <-- Ajusta aquí el tamaño de letra de TODA la tabla
 
 st.set_page_config(page_title="Rankings", layout="wide")
 header_ui(
@@ -84,7 +84,7 @@ col_r1, col_r2 = st.columns([1,3])
 top_n = col_r1.slider("Seleccionar Top N", 5, 50, 20, 1)
 orden_metric = col_r2.radio(
     "Ordenar por:",
-    ["Monto Contabilizado","Monto Pagado","Cantidad Documentos"],
+    ["Monto Pagado", "Cantidad Documentos"],
     horizontal=True, index=0
 )
 
@@ -92,14 +92,14 @@ orden_metric = col_r2.radio(
 def _agg_base(df_in: pd.DataFrame, group_col: str) -> pd.DataFrame:
     """
     Devuelve agregación por grupo con:
-      - Monto Contabilizado (antes Autorizado) / Monto Pagado / Cantidad Documentos
+      - Monto Pagado (antes Contabilizado) / Cantidad Documentos
       - Cantidad Prioritario / % Prioritario (1 decimal)
       - Cantidad Cuenta Especial / % Cuenta Especial (1 decimal)
       - Mayoría: Proveedor Prioritario (Sí/No), Cuenta Especial (Sí/No)
     """
     if df_in.empty:
         return pd.DataFrame(columns=[
-            group_col, "Monto Contabilizado","Monto Pagado","Cantidad Documentos",
+            group_col, "Monto Pagado", "Cantidad Documentos",
             "Cantidad Prioritario","% Prioritario",
             "Cantidad Cuenta Especial","% Cuenta Especial",
             "Proveedor Prioritario","Cuenta Especial"
@@ -110,13 +110,11 @@ def _agg_base(df_in: pd.DataFrame, group_col: str) -> pd.DataFrame:
              prov_prioritario=df_in.get("prov_prioritario", False).astype(bool),
              cuenta_especial=df_in.get("cuenta_especial", False).astype(bool),
              monto_autorizado=pd.to_numeric(df_in.get("monto_autorizado", 0.0), errors="coerce").fillna(0.0),
-             monto_pagado=pd.to_numeric(df_in.get("monto_pagado", 0.0), errors="coerce").fillna(0.0),
          )
          .groupby(group_col, dropna=False)
          .agg(
              **{
-                 "Monto Contabilizado": ("monto_autorizado", "sum"),
-                 "Monto Pagado": ("monto_pagado", "sum"),
+                 "Monto Pagado": ("monto_autorizado", "sum"),
                  "Cantidad Documentos": (group_col, "count"),
                  "Cantidad Prioritario": ("prov_prioritario", "sum"),
                  "Cantidad Cuenta Especial": ("cuenta_especial", "sum"),
@@ -151,7 +149,7 @@ def agregar_ranking(df_in: pd.DataFrame, group_col: str, nombre_col: str) -> pd.
     # Orden amigable de columnas
     cols = [
         nombre_col,
-        "Monto Contabilizado","Monto Pagado","Cantidad Documentos",
+        "Monto Pagado","Cantidad Documentos",
         "Cantidad Prioritario","% Prioritario",
         "Cantidad Cuenta Especial","% Cuenta Especial",
         "Proveedor Prioritario","Cuenta Especial"
@@ -190,17 +188,42 @@ def _style_headers(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
     else:
         sty = df_disp
 
+    sty = sty.hide(axis="index")
     sty = sty.set_table_styles([
-        {"selector": "th", "props": [
+        {"selector": "thead tr", "props": [
             ("background-color", HEADER_BG),
             ("color", HEADER_FG),
             ("font-weight", "bold"),
             ("font-size", FONT_SIZE),
+            ("text-align", "center"),
+            ("border-radius", "12px 12px 0 0")
+        ]},
+        {"selector": "th", "props": [
+            ("background-color", "transparent"),
+            ("color", HEADER_FG),
+            ("font-weight", "600"),
+            ("font-size", FONT_SIZE),
+            ("text-transform", "uppercase"),
+            ("letter-spacing", "0.5px"),
+            ("padding", "14px 18px"),
             ("text-align", "center")
         ]},
-        {"selector": "td", "props": [
+        {"selector": "tbody td", "props": [
             ("font-size", FONT_SIZE),
-            ("text-align", "right")
+            ("padding", "14px 18px"),
+            ("text-align", "right"),
+            ("border-bottom", "1px solid #e0e6ff")
+        ]},
+        {"selector": "tbody tr:nth-child(even)", "props": [
+            ("background-color", "#f5f7ff")
+        ]},
+        {"selector": "tbody tr:hover", "props": [
+            ("background-color", "#e8edff")
+        ]},
+        {"selector": "tbody td:first-child", "props": [
+            ("text-align", "left"),
+            ("font-weight", "600"),
+            ("color", "#1f2a55")
         ]}
     ], overwrite=False)
 
@@ -218,7 +241,7 @@ st.subheader("Top Proveedores")
 prov = agregar_ranking(dfp_f, "prr_razon_social", "Razón Social")
 # Formato de pantalla (no afecta Excel)
 prov_disp = _format_percent_cols_for_display(prov, ["% Prioritario", "% Cuenta Especial"])
-prov_disp = _format_money_cols_for_display(prov_disp, ["Monto Contabilizado", "Monto Pagado"])
+prov_disp = _format_money_cols_for_display(prov_disp, ["Monto Pagado"])
 style_table(_style_headers(prov_disp))
 st.download_button(
     "⬇️ Descargar Ranking de Proveedores",
@@ -232,7 +255,7 @@ st.subheader("Top Centros de Costo")
 if "nombre_centro_costo" in dfp_f.columns:
     cc = agregar_ranking(dfp_f, "nombre_centro_costo", "Centro de Costo")
     cc_disp = _format_percent_cols_for_display(cc, ["% Prioritario", "% Cuenta Especial"])
-    cc_disp = _format_money_cols_for_display(cc_disp, ["Monto Contabilizado", "Monto Pagado"])
+    cc_disp = _format_money_cols_for_display(cc_disp, ["Monto Pagado"])
     style_table(_style_headers(cc_disp))
     st.download_button(
         "⬇️ Descargar Ranking de Centros de Costo",

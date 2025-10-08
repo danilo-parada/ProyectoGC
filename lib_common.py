@@ -10,6 +10,7 @@ from typing import Dict, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
+from pandas.io.formats.style import Styler
 import streamlit as st
 
 # ============================================================
@@ -106,8 +107,39 @@ def read_any(file)->pd.DataFrame:
     else:
         raise ValueError(f"Formato de archivo no soportado: {name}")
 
-def style_table(df: pd.DataFrame, use_container_width=True):
-    st.dataframe(df, use_container_width=use_container_width)
+def style_table(df: pd.DataFrame | Styler, use_container_width=True, height=420):
+    if isinstance(df, Styler):
+        st.markdown(
+            """
+            <style>
+            .styled-table-wrapper {
+                width: 100%;
+                overflow-x: auto;
+                border-radius: 16px;
+                box-shadow: 0 12px 30px rgba(15, 34, 75, 0.12);
+                border: 1px solid #d9e1ff;
+                margin-bottom: 1.5rem;
+                background-color: #ffffff;
+            }
+            .styled-table-wrapper table {
+                width: 100% !important;
+                border-collapse: separate !important;
+                border-spacing: 0;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"""
+            <div class="styled-table-wrapper">
+                {df.to_html()}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.dataframe(df, use_container_width=use_container_width, height=height)
 
 # ============================================================
 # 4) Tema visual y cabecera
