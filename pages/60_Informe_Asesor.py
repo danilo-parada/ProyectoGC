@@ -311,12 +311,14 @@ def _card_html(
     tone: str = "default",
     stats: list[tuple[str, str]] | None = None,
     compact: bool = True,
+    tooltip: str | None = None,
 ) -> str:
     classes = ["app-card", "app-card--frost"]
     if compact:
         classes.append("app-card__mini")
     if tone == "accent":
         classes.append("app-card--accent")
+    tooltip_attr = f' title="{html.escape(str(tooltip))}"' if tooltip else ""
     title_html = html.escape(str(title))
     value_html = html.escape(str(value))
     subtitle_html = (
@@ -338,7 +340,7 @@ def _card_html(
         )
         stats_html = f'<div class="app-inline-stats">{pills}</div>'
     return (
-        f'<div class="{" ".join(classes)}">'
+        f'<div class="{" ".join(classes)}"{tooltip_attr}>'
         f'<div class="app-card__title">{title_html}</div>'
         f'<div class="app-card__value">{value_html}</div>'
         f'{subtitle_html}'
@@ -401,12 +403,14 @@ else:
             subtitle="Base filtrada",
             tag=f"{total_docs:,} doc.",
             tone="accent",
+            tooltip=TOOLTIPS["total_facturado"],
         ),
         _card_html(
             "Total pagado",
             money(kpi_total["total_pagado"]),
             subtitle="Facturas con pago registrado",
             tag=f"{total_pagadas:,} pagos",
+            tooltip=TOOLTIPS["total_pagado"],
         ),
         _card_html(
             LABELS["dpp_emision_pago"],
@@ -422,12 +426,6 @@ else:
             LABELS["dcp_contab_pago"],
             _fmt_days(kpi_total["dcp"]),
             subtitle=TOOLTIPS["dcp_contab_pago"],
-        ),
-        _card_html(
-            LABELS["brecha_porcentaje"],
-            _fmt_pct(kpi_total["brecha_pct"]),
-            subtitle=TOOLTIPS["brecha_porcentaje"],
-            tag_variant="warning",
         ),
     ]
     _render_cards(cards)
@@ -446,7 +444,6 @@ else:
                 (LABELS["dpp_emision_pago"], _fmt_days(k["dpp"])),
                 (LABELS["dic_emision_contab"], _fmt_days(k["dic"])),
                 (LABELS["dcp_contab_pago"], _fmt_days(k["dcp"])),
-                (LABELS["brecha_porcentaje"], _fmt_pct(k["brecha_pct"])),
             ]
             segment_cards.append(
                 _card_html(
