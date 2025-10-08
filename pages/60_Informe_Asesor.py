@@ -14,7 +14,7 @@ from lib_common import (
     advanced_filters_ui, money, one_decimal, header_ui,
     style_table, sanitize_df, safe_markdown,
 )
-from lib_metrics import ensure_derived_fields, compute_kpis, apply_common_filters
+from lib_metrics import ensure_derived_fields, compute_kpis, apply_common_filters, compute_dic_split
 from lib_report import excel_bytes_single, generate_pdf_report
 
 # -------------------- Config & Header --------------------
@@ -345,6 +345,21 @@ def _render_cards(cards: list[str], layout: str = "grid"):
 def _fmt_days(val: float) -> str:
     return "s/d" if pd.isna(val) else f"{one_decimal(val)} d"
 
+def _fmt_dic_avg(val: float | None) -> str:
+    if val is None or pd.isna(val):
+        return "s/d"
+    return f"{one_decimal(val)} d"
+
+def _dic_card_stats(dic_split: dict) -> list[tuple[str, str]]:
+    return [
+        ("Pagadas", f"{_fmt_dic_avg(dic_split.get('dic_pagadas_avg'))} • {int(dic_split.get('dic_pagadas_n', 0)):,} doc."),
+        (
+            "Contab. sin pago",
+            f"{_fmt_dic_avg(dic_split.get('dic_contab_unpaid_avg'))} • {int(dic_split.get('dic_contab_unpaid_n', 0)):,} doc.",
+        ),
+        ("No contabilizadas", f"{int(dic_split.get('no_contab_n', 0)):,} doc."),
+    ]
+
 def _fmt_pct(val: float) -> str:
     return "s/d" if pd.isna(val) else f"{one_decimal(val)}%"
 
@@ -377,6 +392,7 @@ kpi_total = compute_kpis(df_filtered_common)
 if df_filtered_common.empty:
     st.info("No hay datos con los filtros actuales.")
 else:
+    dic_split_total = compute_dic_split(df_filtered_common)
     total_docs = int(kpi_total["docs_total"])
     total_pagadas = int(kpi_total["docs_pagados"])
     cards = [
@@ -412,16 +428,20 @@ else:
             subtitle=TOOLTIPS["dpp_emision_pago"],
         ),
         _card_html(
-            LABELS["dic_emision_contab"],
-            _fmt_days(kpi_total["dic"]),
-            subtitle=TOOLTIPS["dic_emision_contab"],
-        ),
-        _card_html(
             LABELS["dcp_contab_pago"],
             _fmt_days(kpi_total["dcp"]),
             subtitle=TOOLTIPS["dcp_contab_pago"],
         ),
     ]
+    cards.append(
+        _card_html(
+            LABELS["dic_emision_contab"],
+            f"{len(df_filtered_common):,} doc.",
+            subtitle=TOOLTIPS["dic_emision_contab"],
+            stats=_dic_card_stats(dic_split_total),
+            compact=False,
+        )
+    )
     _render_cards(cards)
 
     if "cuenta_especial" in df.columns:
@@ -433,12 +453,13 @@ else:
             if sub.empty:
                 continue
             k = compute_kpis(sub)
+            dic_split_seg = compute_dic_split(sub)
             stats = [
                 ("Total pagado (real)", money(k["total_pagado_real"])),
                 (LABELS["dpp_emision_pago"], _fmt_days(k["dpp"])),
-                (LABELS["dic_emision_contab"], _fmt_days(k["dic"])),
                 (LABELS["dcp_contab_pago"], _fmt_days(k["dcp"])),
             ]
+            stats.extend(_dic_card_stats(dic_split_seg))
             segment_cards.append(
                 _card_html(
                     title=f"CE {'Si' if flag else 'No'}",

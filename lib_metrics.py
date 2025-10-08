@@ -9,6 +9,38 @@ import pandas as pd
 
 from lib_common import apply_advanced_filters
 
+def compute_dic_split(df: pd.DataFrame, lo: int = -5, hi: int = 365) -> dict:
+    f = df.copy()
+    to_dt = lambda s: pd.to_datetime(s, errors="coerce").dt.tz_localize(None)
+    for c in ["fecha_emision", "fecha_contab", "fecha_pagado"]:
+        if c not in f.columns:
+            f[c] = pd.NaT
+        else:
+            f[c] = to_dt(f[c])
+
+    mA = f["fecha_contab"].notna() & f["fecha_pagado"].notna()
+    dA = (f.loc[mA, "fecha_contab"] - f.loc[mA, "fecha_emision"]).dt.days.dropna()
+    dA = dA.clip(lower=lo, upper=hi)
+    dic_pagadas_avg = None if dA.empty else round(float(dA.mean()), 1)
+    dic_pagadas_n = int(mA.sum())
+
+    mB = f["fecha_contab"].notna() & f["fecha_pagado"].isna()
+    dB = (f.loc[mB, "fecha_contab"] - f.loc[mB, "fecha_emision"]).dt.days.dropna()
+    dB = dB.clip(lower=lo, upper=hi)
+    dic_contab_unpaid_avg = None if dB.empty else round(float(dB.mean()), 1)
+    dic_contab_unpaid_n = int(mB.sum())
+
+    mC = f["fecha_contab"].isna()
+    no_contab_n = int(mC.sum())
+
+    return {
+        "dic_pagadas_avg": dic_pagadas_avg,
+        "dic_pagadas_n": dic_pagadas_n,
+        "dic_contab_unpaid_avg": dic_contab_unpaid_avg,
+        "dic_contab_unpaid_n": dic_contab_unpaid_n,
+        "no_contab_n": no_contab_n,
+    }
+
 def _safe_to_numeric(s: pd.Series, default: float = 0.0) -> pd.Series:
     try:
         out = pd.to_numeric(s, errors="coerce")
