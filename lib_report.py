@@ -336,7 +336,7 @@ def generate_pdf_report(
         story.append(Paragraph("<b>Resumen KPIs de Pagos (Facturas Pagadas)</b>", styles["body_left"]))
         kpi_txt = (
             f"• Monto Total Facturado: <b>{kpis.get('total_facturado','-')}</b><br/>"
-            f"• Total Pagado (autorizado): <b>{kpis.get('total_pagado','-')}</b><br/>"
+            f"• Total Pagado (real): <b>{kpis.get('total_pagado_real','-')}</b><br/>"
             f"• {LABELS['dpp_emision_pago']}: <b>{kpis.get('dso','-')}</b>"
         )
         story.append(Paragraph(kpi_txt, styles["body_left"]))
