@@ -401,6 +401,24 @@ horizonte = colf3.number_input("Horizonte (días)", 7, 90, 30, 7)
 
 crit_sel = st.radio("Criterio de Orden", ["Riesgo de aprobación", "Urgencia de vencimiento"], horizontal=True)
 
+_LOCAL_FILTER_STATE_KEY = "presupuesto_filters_snapshot"
+_LOCAL_AMOUNT_KEY = "presupuesto_hoy"
+
+
+def _update_presupuesto_session_state(filters: dict[str, str], default_value: float) -> None:
+    """Sincroniza el monto disponible con los filtros locales cuando cambian."""
+
+    stored_filters = st.session_state.get(_LOCAL_FILTER_STATE_KEY)
+
+    if stored_filters is None:
+        st.session_state[_LOCAL_FILTER_STATE_KEY] = filters
+        st.session_state[_LOCAL_AMOUNT_KEY] = float(default_value)
+        return
+
+    if stored_filters != filters:
+        st.session_state[_LOCAL_FILTER_STATE_KEY] = filters
+        st.session_state[_LOCAL_AMOUNT_KEY] = float(default_value)
+
 def _apply_local_filters(dfin: pd.DataFrame) -> pd.DataFrame:
     out = dfin.copy()
     if ce_local == "Cuenta Especial":
@@ -498,13 +516,17 @@ else:
     # Monto por defecto = suma de críticos (<= 0 días)
     total_criticos = float(prior.loc[prior["dias_a_vencer"] <= 0, "importe_regla"].sum())
     default_presu  = total_criticos if total_criticos > 0 else 0.0
+
+    local_filters = {"ce": ce_local, "prio": prio_local, "crit": crit_sel}
+    _update_presupuesto_session_state(local_filters, float(default_presu))
+
     monto_presu = st.number_input(
         "Monto disponible hoy",
         min_value=0.0,
-        value=float(default_presu),
+        value=float(st.session_state.get(_LOCAL_AMOUNT_KEY, default_presu)),
         step=1000.0,        # puedes subirlo si quieres saltos mayores
         format="%.0f",      # << permite ingresar 100000000 sin truncados
-        key="presupuesto_hoy"
+        key=_LOCAL_AMOUNT_KEY
     )
 
 
