@@ -344,16 +344,25 @@ div[data-testid="stMetricValue"] {
 }
 
 .stDataFrame table {
-  color: var(--app-table-body-fg);
+  color: #000000;
 }
 
-.stDataFrame th {
+.stDataFrame td,
+[data-testid="stTable"] td {
+  color: #000000 !important;
+  opacity: 1 !important;
+  font-weight: 500;
+}
+
+.stDataFrame th,
+[data-testid="stTable"] th {
   background: rgba(19, 37, 66, 0.9);
-  color: var(--app-text);
+  color: #000000 !important;
+  font-weight: 700;
 }
 
-.stDataFrame td {
-  color: var(--app-table-body-fg);
+.plotly-table text {
+  fill: #000000 !important;
 }
 
 .app-pill-group {
@@ -707,7 +716,7 @@ div[data-testid="stTable"] table,
 .styled-table-wrapper table,
 .ag-theme-streamlit {
   font-size: var(--app-table-font-size);
-  color: var(--app-table-body-fg);
+  color: #000000;
 }
 
 div[data-testid="stTable"] thead tr,
@@ -715,7 +724,7 @@ div[data-testid="stTable"] thead tr,
 .styled-table-wrapper table thead tr,
 .ag-theme-streamlit .ag-header {
   background-color: var(--app-primary) !important;
-  color: var(--app-table-header-fg) !important;
+  color: #000000 !important;
 }
 
 div[data-testid="stTable"] thead th,
@@ -724,7 +733,7 @@ div[data-testid="stTable"] thead th,
 .ag-theme-streamlit .ag-header-cell,
 .ag-theme-streamlit .ag-header-cell-label {
   background-color: transparent !important;
-  color: var(--app-table-header-fg) !important;
+  color: #000000 !important;
   font-size: var(--app-table-font-size);
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -735,7 +744,7 @@ div[data-testid="stTable"] tbody td,
 .styled-table-wrapper table tbody td,
 .ag-theme-streamlit .ag-cell {
   font-size: var(--app-table-font-size);
-  color: var(--app-table-body-fg);
+  color: #000000 !important;
 }
 
 .styled-table-wrapper thead th,
