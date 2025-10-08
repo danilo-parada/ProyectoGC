@@ -141,6 +141,7 @@ def style_table(
                 width: 100% !important;
                 border-collapse: separate !important;
                 border-spacing: 0;
+                color: var(--app-table-body-fg);
             }
             </style>
             """,

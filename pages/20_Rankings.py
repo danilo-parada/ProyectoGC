@@ -219,7 +219,8 @@ def _style_headers(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
             ("font-size", FONT_SIZE),
             ("padding", "14px 18px"),
             ("text-align", "right"),
-            ("border-bottom", "1px solid #e0e6ff")
+            ("border-bottom", "1px solid #e0e6ff"),
+            ("color", "var(--app-table-body-fg)")
         ]},
         {"selector": "tbody tr:nth-child(even)", "props": [
             ("background-color", "#f5f7ff")

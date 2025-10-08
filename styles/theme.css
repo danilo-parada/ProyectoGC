@@ -22,6 +22,7 @@
   --hero-subtitle-color: rgba(255, 255, 255, 0.75);
   --hero-badge-bg: #1a0a29;
   --hero-badge-border: rgba(255, 255, 255, 0.35);
+  --app-table-body-fg: #1f2937;
 }
 
 /* Fondo principal del dashboard */
@@ -343,7 +344,7 @@ div[data-testid="stMetricValue"] {
 }
 
 .stDataFrame table {
-  color: var(--app-text);
+  color: var(--app-table-body-fg);
 }
 
 .stDataFrame th {
@@ -352,7 +353,7 @@ div[data-testid="stMetricValue"] {
 }
 
 .stDataFrame td {
-  color: var(--app-text-muted);
+  color: var(--app-table-body-fg);
 }
 
 .app-pill-group {
@@ -706,7 +707,7 @@ div[data-testid="stTable"] table,
 .styled-table-wrapper table,
 .ag-theme-streamlit {
   font-size: var(--app-table-font-size);
-  color: var(--app-text);
+  color: var(--app-table-body-fg);
 }
 
 div[data-testid="stTable"] thead tr,
@@ -734,7 +735,7 @@ div[data-testid="stTable"] tbody td,
 .styled-table-wrapper table tbody td,
 .ag-theme-streamlit .ag-cell {
   font-size: var(--app-table-font-size);
-  color: var(--app-text-muted);
+  color: var(--app-table-body-fg);
 }
 
 .styled-table-wrapper thead th,
