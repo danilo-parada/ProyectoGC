@@ -583,3 +583,128 @@ div[data-testid="stMetricValue"] {
   color: #ffffff;
 }
 
+/* ==================== Componentes específicos de Forecast ==================== */
+.forecast-card-grid {
+  display: grid;
+  gap: 1rem;
+  margin: 1.2rem 0 1.6rem;
+}
+
+@media (min-width: 768px) {
+  .forecast-card-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+.forecast-card {
+  position: relative;
+  padding: 1.35rem 1.5rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(145deg, rgba(13, 47, 102, 0.95), rgba(24, 80, 164, 0.92));
+  border: 1px solid rgba(79, 156, 255, 0.38);
+  box-shadow: 0 22px 48px rgba(12, 26, 52, 0.35);
+  overflow: hidden;
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+}
+
+.forecast-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.16), transparent 55%);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.forecast-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(79, 156, 255, 0.55);
+  box-shadow: 0 28px 56px rgba(12, 26, 52, 0.45);
+}
+
+.forecast-card__label {
+  display: block;
+  font-size: 0.78rem;
+  letter-spacing: 0.55px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.forecast-card__value {
+  display: block;
+  margin-top: 0.45rem;
+  font-size: 1.85rem;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 0.35px;
+}
+
+.forecast-card__foot {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.88);
+  line-height: 1.4;
+}
+
+.forecast-foot-note {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+  letter-spacing: 0.35px;
+}
+
+.forecast-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.35px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.forecast-chip--success {
+  background: rgba(66, 214, 164, 0.18);
+  border-color: rgba(66, 214, 164, 0.45);
+  color: #42d6a4;
+}
+
+.forecast-chip--info {
+  background: rgba(79, 156, 255, 0.2);
+  border-color: rgba(79, 156, 255, 0.45);
+  color: #8cb8ff;
+}
+
+.forecast-chip--warning {
+  background: rgba(247, 185, 85, 0.22);
+  border-color: rgba(247, 185, 85, 0.45);
+  color: #f7b955;
+}
+
+.forecast-chip--danger {
+  background: rgba(255, 99, 132, 0.22);
+  border-color: rgba(255, 99, 132, 0.45);
+  color: #ff6384;
+}
+
+.forecast-chip--neutral {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.forecast-note {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--app-text-muted);
+  background: rgba(79, 156, 255, 0.14);
+  border-left: 3px solid rgba(79, 156, 255, 0.55);
+  padding: 0.6rem 0.85rem;
+  border-radius: 12px;
+}
+
