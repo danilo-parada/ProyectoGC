@@ -225,9 +225,9 @@ else:
             subtitle=TOOLTIPS["dpp_emision_pago"],
         ),
         _card_html(
-            "TFA promedio",
+            LABELS["dic_emision_contab"],
             _fmt_days(kpi_total["tfa"]),
-            subtitle="Emision -> contabilizacion",
+            subtitle=TOOLTIPS["dic_emision_contab"],
         ),
         _card_html(
             LABELS["dcp_contab_pago"],
@@ -253,7 +253,7 @@ else:
             stats = [
                 ("Total pagado", money(k["total_pagado_aut"])),
                 (LABELS["dpp_emision_pago"], _fmt_days(k["dso"])),
-                ("TFA", _fmt_days(k["tfa"])),
+                (LABELS["dic_emision_contab"], _fmt_days(k["tfa"])),
                 (LABELS["dcp_contab_pago"], _fmt_days(k["tpa"])),
                 (LABELS["brecha_porcentaje"], _fmt_pct(k["gap_pct"])),
             ]
