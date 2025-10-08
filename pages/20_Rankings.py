@@ -56,7 +56,7 @@ if dfp.empty:
     st.stop()
 
 # -------- Filtros LOCALES (solo esta página) --------
-col_l1, col_l2, col_l3 = st.columns([1,1,2])
+col_l1, col_l2 = st.columns(2)
 
 # Cuenta Especial (local)
 ce_local = "Todas"
