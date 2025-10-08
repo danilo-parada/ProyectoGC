@@ -105,27 +105,101 @@ pct_no_pagadas_total = (count_no_pagadas / total_docs * 100.0) if total_docs els
 
 st.subheader("Resumen de honorarios")
 
+st.markdown(
+    """
+    <style>
+    .honorarios-metric-card {
+        position: relative;
+        overflow: hidden;
+        padding: 1.4rem 1.6rem;
+        border-radius: var(--radius-md, 14px);
+        background: linear-gradient(140deg, rgba(19, 37, 66, 0.92), rgba(11, 26, 48, 0.88));
+        border: 1px solid rgba(79, 156, 255, 0.28);
+        box-shadow: 0 24px 46px rgba(6, 17, 35, 0.45);
+    }
+
+    .honorarios-metric-card::before {
+        content: "";
+        position: absolute;
+        inset: -60% 40% auto -40%;
+        height: 180%;
+        background: radial-gradient(circle at top, rgba(79, 156, 255, 0.38), transparent 65%);
+        opacity: 0.65;
+        pointer-events: none;
+    }
+
+    .honorarios-metric-card__title {
+        position: relative;
+        font-size: 0.82rem;
+        letter-spacing: 0.45px;
+        text-transform: uppercase;
+        color: var(--app-text-muted, #9db4d5);
+        margin: 0;
+    }
+
+    .honorarios-metric-card__value {
+        position: relative;
+        font-size: 2.25rem;
+        font-weight: 700;
+        color: var(--app-text, #e6f1ff);
+        margin: 0.55rem 0 0;
+    }
+
+    .honorarios-metric-card__footer {
+        position: relative;
+        margin-top: 0.55rem;
+        font-size: 0.95rem;
+        color: var(--app-text-muted, #9db4d5);
+    }
+
+    .honorarios-metric-card__breakdown {
+        position: relative;
+        margin-top: 0.75rem;
+        font-size: 0.9rem;
+        line-height: 1.45;
+        color: var(--app-text-muted, #9db4d5);
+    }
+
+    .honorarios-metric-card__breakdown strong {
+        color: var(--app-text, #e6f1ff);
+        font-weight: 600;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 ce_available = "cuenta_especial" in df.columns
 ce_flag_all = df["cuenta_especial"].fillna(False).astype(bool) if ce_available else None
 
 CE_COLORS = ["#4E79A7", "#A0A0A0"]
 
 def _counts_html(ce_val: int, no_val: int) -> str:
-    return f"<div style='font-size:15px; line-height:1.3;'>Cuenta especial: {ce_val:,}<br>No cuenta especial: {no_val:,}</div>"
+    return (
+        "<div class='honorarios-metric-card__breakdown'>"
+        f"<span>Cuenta especial: <strong>{ce_val:,}</strong></span><br>"
+        f"<span>No cuenta especial: <strong>{no_val:,}</strong></span>"
+        "</div>"
+    )
 
 def _amount_html(ce_val: float, no_val: float) -> str:
-    return f"<div style='font-size:15px; line-height:1.3;'>Cuenta especial: {money(ce_val)}<br>No cuenta especial: {money(no_val)}</div>"
+    return (
+        "<div class='honorarios-metric-card__breakdown'>"
+        f"<span>Cuenta especial: <strong>{money(ce_val)}</strong></span><br>"
+        f"<span>No cuenta especial: <strong>{money(no_val)}</strong></span>"
+        "</div>"
+    )
 
 def _render_metric_block(title: str, main_value: str, footer: str | None = None, breakdown_html: str | None = None):
     parts: list[str] = [
-        "<div style='padding:12px 14px; border-radius:12px; background:#f6f8fb; min-height:128px;'>",
-        f"<div style='font-size:16px; color:#5d6a7c; text-transform:uppercase; letter-spacing:0.4px;'>{title}</div>",
-        f"<div style='font-size:34px; font-weight:700; color:#202833; margin-top:6px;'>{main_value}</div>",
+        "<div class='honorarios-metric-card'>",
+        f"<div class='honorarios-metric-card__title'>{title}</div>",
+        f"<div class='honorarios-metric-card__value'>{main_value}</div>",
     ]
     if footer:
-        parts.append(f"<div style='font-size:15px; color:#5d6a7c; margin-top:4px;'>{footer}</div>")
+        parts.append(f"<div class='honorarios-metric-card__footer'>{footer}</div>")
     if breakdown_html:
-        parts.append(f"<div style='margin-top:8px; color:#39424e;'>{breakdown_html}</div>")
+        parts.append(breakdown_html)
     parts.append("</div>")
     st.markdown("".join(parts), unsafe_allow_html=True)
 
