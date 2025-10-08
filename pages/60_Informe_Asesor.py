@@ -462,6 +462,10 @@ else:
 st.subheader("5) Presupuesto del Día (Selección Automática)")
 
 base = df_nopag_loc.copy()
+
+if "dias_a_vencer" in base.columns:
+    base = base[pd.to_numeric(base["dias_a_vencer"], errors="coerce") <= horizonte]
+
 if base.empty or "importe_deuda" not in base:
     st.info("No hay documentos pendientes para priorizar con los filtros locales.")
 else:
