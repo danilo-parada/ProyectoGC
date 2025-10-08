@@ -430,7 +430,7 @@ with colA:
             (f"N > {max_dias_pag} d", f"{n_gt:,}", "Documentos"),
         ])
     else:
-        st.info("Sin datos de Días a Ingreso Contable (DIC) en pagos contabilizados.")
+        st.info("Sin datos de Días facturas hasta contabilizarse (DFC) en pagos contabilizados.")
 with colB:
     if tpc_loc.notna().any():
         fig_tpc, _ = _hist_with_two_means(tpc_loc, bins_pag, BLUE, max_dias_pag,

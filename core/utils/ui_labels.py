@@ -15,7 +15,7 @@ class _SafeLookup(dict):
 LABELS: Dict[str, str] = _SafeLookup(
     {
         "dpp_emision_pago": "Días Promedio a Pago (DPP)",
-        "dic_emision_contab": "Días a Ingreso Contable (DIC)",
+        "dic_emision_contab": "Días facturas hasta contabilizarse (DFC)",
         "dcp_contab_pago": "Días desde Contabilización al Pago (DCP)",
         "total_facturado": "Monto total facturado",
         "total_pagado_real": "Monto total pagado (real)",
@@ -25,7 +25,7 @@ LABELS: Dict[str, str] = _SafeLookup(
 TOOLTIPS: Dict[str, str] = _SafeLookup(
     {
         "dpp_emision_pago": "Promedio de días entre emisión de factura y pago efectivo.",
-        "dic_emision_contab": "Promedio de días entre emisión y registro contable.",
+        "dic_emision_contab": "Promedio de días entre que una factura pase a ser contabilizada.",
         "dcp_contab_pago": "Promedio de días entre contabilización y pago.",
         "total_facturado": "Incluye todo el monto facturado del periodo, incluso facturas aún sin pago.",
         "total_pagado_real": "Suma `monto_pagado_real`: usa `monto_autorizado` de la hoja Facturas cuando hay fecha de pago.",
