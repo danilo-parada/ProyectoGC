@@ -172,7 +172,33 @@ df0 = ensure_derived_fields(df0)
 # -------------------- Filtros globales --------------------
 fac_ini, fac_fin, pay_ini, pay_fin = general_date_filters_ui(df0)
 # Avanzado sin prioritario global (usamos ese filtro en secciones locales)
-sede, org, prov, cc, oc, est, _ = advanced_filters_ui(df0)
+sede, org, prov, cc, oc, est, _ = advanced_filters_ui(
+    df0, show_controls=["sede", "org", "prov", "cc", "oc"]
+)
+
+estado_doc_options = [
+    "Todos",
+    "Autorizado sin Pago",
+    "Pagado",
+    "Facturado Sin Autorizar",
+]
+default_estado_doc = st.session_state.get("estado_doc_local", estado_doc_options[0])
+if default_estado_doc not in estado_doc_options:
+    default_estado_doc = estado_doc_options[0]
+estado_doc_choice = st.radio(
+    "Tipo de Doc./Estado (local)",
+    estado_doc_options,
+    horizontal=True,
+    index=estado_doc_options.index(default_estado_doc),
+    key="estado_doc_local",
+)
+estado_doc_map = {
+    "Todos": None,
+    "Autorizado sin Pago": "autorizada_sin_pago",
+    "Pagado": "pagada",
+    "Facturado Sin Autorizar": "sin_autorizacion",
+}
+estado_doc_value = estado_doc_map.get(estado_doc_choice)
 
 common_filters = {
     "fac_range": (fac_ini, fac_fin),
@@ -183,14 +209,21 @@ common_filters = {
     "cc": cc,
     "oc": oc,
     "est": est,
+    "estado_doc": estado_doc_value,
     "prio": [],
 }
 
 df_filtered_common = apply_common_filters(df0, common_filters)
 df = df_filtered_common
 
+common_filters_no_estado = {**common_filters, "estado_doc": None}
+df_filtered_common_no_estado = apply_common_filters(df0, common_filters_no_estado)
+
 df_pag = df[df["estado_pago"] == "pagada"].copy()
-df_nopag = df[df["estado_pago"] != "pagada"].copy()
+
+df_nopag_all = df_filtered_common_no_estado[
+    df_filtered_common_no_estado["estado_pago"] != "pagada"
+].copy()
 
 TODAY = pd.Timestamp(date.today()).normalize()
 
@@ -491,7 +524,7 @@ else:
 # 3) Análisis de Deuda Pendiente
 # =========================================================
 st.subheader("3) Análisis de Deuda Pendiente")
-df_nopag = ensure_dias_a_vencer(ensure_importe_deuda(df_nopag))
+df_nopag_all = ensure_dias_a_vencer(ensure_importe_deuda(df_nopag_all))
 
 def _kpis_deuda(dfin: pd.DataFrame) -> dict:
     if dfin.empty or "dias_a_vencer" not in dfin:
@@ -501,11 +534,11 @@ def _kpis_deuda(dfin: pd.DataFrame) -> dict:
     porv, c_p = _agg_block(dfin, dfin["dias_a_vencer"] > 0)
     return dict(vencido=vencido, c_venc=c_v, hoy=hoy_m, c_hoy=c_h, por_ven=porv, c_por=c_p)
 
-if df_nopag.empty:
+if df_nopag_all.empty:
     st.info("No hay documentos pendientes.")
 else:
-    n1 = df_nopag[df_nopag["Nivel"].eq("Doc. Autorizado p/ Pago")] if "Nivel" in df_nopag else df_nopag.iloc[0:0]
-    n2 = df_nopag[df_nopag["Nivel"].eq("Doc. Pendiente de Autorización")] if "Nivel" in df_nopag else df_nopag.iloc[0:0]
+    n1 = df_nopag_all[df_nopag_all["Nivel"].eq("Doc. Autorizado p/ Pago")] if "Nivel" in df_nopag_all else df_nopag_all.iloc[0:0]
+    n2 = df_nopag_all[df_nopag_all["Nivel"].eq("Doc. Pendiente de Autorización")] if "Nivel" in df_nopag_all else df_nopag_all.iloc[0:0]
 
 def draw_debt_panel(title: str, dpanel: pd.DataFrame):
     safe_markdown(
@@ -641,7 +674,7 @@ def _prioritize_documents(dfin: pd.DataFrame, criterio: str) -> pd.DataFrame:
 
     return out
 
-df_nopag_loc = _apply_local_filters(df_nopag)
+df_nopag_loc = _apply_local_filters(df_nopag_all)
 
 
 def _apply_horizon_filter(dfin: pd.DataFrame) -> pd.DataFrame:

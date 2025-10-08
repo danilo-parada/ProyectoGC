@@ -133,7 +133,33 @@ df0 = ensure_derived_fields(df0)
 
 # ===================== Filtros globales =====================
 fac_ini, fac_fin, pay_ini, pay_fin = general_date_filters_ui(df0)
-sede, org, prov, cc, oc, est, _prio_removed = advanced_filters_ui(df0)
+sede, org, prov, cc, oc, est, _prio_removed = advanced_filters_ui(
+    df0, show_controls=["sede", "org", "prov", "cc", "oc"]
+)
+
+estado_doc_options = [
+    "Todos",
+    "Autorizado sin Pago",
+    "Pagado",
+    "Facturado Sin Autorizar",
+]
+default_estado_doc = st.session_state.get("estado_doc_local", estado_doc_options[0])
+if default_estado_doc not in estado_doc_options:
+    default_estado_doc = estado_doc_options[0]
+estado_doc_choice = st.radio(
+    "Tipo de Doc./Estado (local)",
+    estado_doc_options,
+    horizontal=True,
+    index=estado_doc_options.index(default_estado_doc),
+    key="estado_doc_local",
+)
+estado_doc_map = {
+    "Todos": None,
+    "Autorizado sin Pago": "autorizada_sin_pago",
+    "Pagado": "pagada",
+    "Facturado Sin Autorizar": "sin_autorizacion",
+}
+estado_doc_value = estado_doc_map.get(estado_doc_choice)
 
 common_filters = {
     "fac_range": (fac_ini, fac_fin),
@@ -144,6 +170,7 @@ common_filters = {
     "cc": cc,
     "oc": oc,
     "est": est,
+    "estado_doc": estado_doc_value,
     "prio": [],
 }
 

@@ -177,9 +177,13 @@ def apply_common_filters(df: pd.DataFrame, filtros: Mapping[str, Any]) -> pd.Dat
     cc = filtros.get("cc", [])
     oc = filtros.get("oc", [])
     est = filtros.get("est", [])
+    estado_doc = filtros.get("estado_doc")
     prio = filtros.get("prio", [])
 
     base = apply_advanced_filters(base, sede, org, prov, cc, oc, est, prio)
+    if estado_doc not in (None, "", "Todos") and "estado_doc" in base.columns:
+        estado_norm = base["estado_doc"].astype(str)
+        base = base[estado_norm == str(estado_doc)]
     return base
 
 
