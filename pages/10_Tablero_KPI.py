@@ -1,4 +1,4 @@
-# 10_Tablero_KPI.py — KPI con brecha porcentual, promedios GLOBAL/LOCAL y histogramas alineados
+# 10_Tablero_KPI.py — KPI con promedios GLOBAL/LOCAL y histogramas alineados
 from __future__ import annotations
 
 import html
@@ -176,11 +176,13 @@ metric_cards = [
         "Monto total facturado",
         money(kpi["total_facturado"]),
         caption=f"Base: {int(kpi['docs_total']):,} doc.",
+        tooltip=TOOLTIPS["total_facturado"],
     ),
     _metric_card(
         "Total pagado",
         money(kpi["total_pagado"]),
         caption=f"Pagadas: {int(kpi['docs_pagados']):,}",
+        tooltip=TOOLTIPS["total_pagado"],
     ),
     _metric_card(
         LABELS["dpp_emision_pago"],
@@ -197,22 +199,8 @@ metric_cards = [
         _fmt_days_metric(mean_tpc_kpi),
         tooltip=TOOLTIPS["dcp_contab_pago"],
     ),
-    _metric_card(
-        LABELS["brecha_porcentaje"],
-        f"{one_decimal(kpi['brecha_pct'])}%",
-        tooltip=TOOLTIPS["brecha_porcentaje"],
-    ),
 ]
 safe_markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>')
-
-safe_markdown(
-    f"""
-    <div class="app-note">
-        <strong>{LABELS["brecha_porcentaje"]}</strong> = 100 × (Total pagado − Total facturado) / max(Total facturado, 1).
-        Total facturado = {money(kpi['total_facturado'])} • Total pagado = {money(kpi['total_pagado'])}.
-    </div>
-    """,
-)
 
 # ====== KPIs por cuenta especial (Si/No) ======
 if "cuenta_especial" in df_filtered_common.columns:
@@ -233,7 +221,6 @@ if "cuenta_especial" in df_filtered_common.columns:
             (LABELS["dpp_emision_pago"], _fmt_days_metric(k["dpp"])),
             (LABELS["dic_emision_contab"], _fmt_days_metric(k["dic"])),
             (LABELS["dcp_contab_pago"], _fmt_days_metric(k["dcp"])),
-            (LABELS["brecha_porcentaje"], f"{one_decimal(k['brecha_pct'])}%"),
         ]
         segment_cards.append(
             _segment_card(title, money(k["total_facturado"]), stats)
