@@ -388,7 +388,7 @@ else:
     _render_cards(cards)
 
     if "cuenta_especial" in df.columns:
-safe_markdown('<div class="app-separator"></div>')
+        safe_markdown('<div class="app-separator"></div>')
         st.markdown("### Desglose por cuenta especial")
         segment_cards: list[str] = []
         for flag in (True, False):
@@ -739,6 +739,7 @@ def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
 
 
 seleccion = pd.DataFrame()
+seleccion_df = pd.DataFrame()
 
 if candidatas_base.empty or "importe_deuda" not in candidatas_base:
     st.info("No hay documentos pendientes para priorizar con los filtros locales.")
@@ -747,7 +748,7 @@ else:
 
     # Monto por defecto = suma de críticos (<= 0 días)
     total_criticos = float(prior.loc[prior["dias_a_vencer"] <= 0, "importe_regla"].sum())
-    default_presu  = total_criticos if total_criticos > 0 else 0.0
+    default_presu = total_criticos if total_criticos > 0 else 0.0
 
     local_filters = {"ce": ce_local, "prio": prio_local, "crit": crit_sel}
     _update_presupuesto_session_state(local_filters, float(default_presu))
@@ -757,7 +758,7 @@ else:
     if budget_input_key not in st.session_state:
         st.session_state[budget_input_key] = _format_currency_plain(current_amount)
 
-safe_markdown(_BUDGET_PANEL_STYLE)
+    safe_markdown(_BUDGET_PANEL_STYLE)
 
     with st.container():
         safe_markdown(
@@ -840,34 +841,33 @@ safe_markdown(_BUDGET_PANEL_STYLE)
             """
         )
 
+        # Selección por presupuesto (corte por acumulado)
+        seleccion = seleccion_df
 
-    # Selección por presupuesto (corte por acumulado)
-    seleccion = seleccion_df
+        # Controles numericos
+        resumen_cards = [
+            _card_html("Presupuesto ingresado", money(float(monto_presu)), subtitle="Disponible hoy", tone="accent"),
+            _card_html("Suma selección", money(suma_sel), subtitle="Total comprometido"),
+            _card_html("Saldo sin asignar", money(restante), subtitle="Presupuesto - selección", tag_variant="warning"),
+        ]
 
-    # Controles numericos
-    resumen_cards = [
-        _card_html("Presupuesto ingresado", money(float(monto_presu)), subtitle="Disponible hoy", tone="accent"),
-        _card_html("Suma selección", money(suma_sel), subtitle="Total comprometido"),
-        _card_html("Saldo sin asignar", money(restante), subtitle="Presupuesto - selección", tag_variant="warning"),
-    ]
-
-    if next_info:
-        resumen_cards.append(
-            _card_html(
-                "Próxima factura a incorporar",
-                money(next_info["monto"]),
-                subtitle=f"{next_info['proveedor']} — Factura {next_info['documento']}",
-                tag=f"Faltan {money(next_info['adicional'])}" if next_info["adicional"] > 0 else "Disponible",
-                tag_variant="warning" if next_info["adicional"] > 0 else "success",
-                tone="accent",
-                stats=[
-                    ("Saldo libre actual", money(restante)),
-                    ("Ajuste necesario", money(next_info["adicional"])),
-                ],
-                compact=False,
+        if next_info:
+            resumen_cards.append(
+                _card_html(
+                    "Próxima factura a incorporar",
+                    money(next_info["monto"]),
+                    subtitle=f"{next_info['proveedor']} — Factura {next_info['documento']}",
+                    tag=f"Faltan {money(next_info['adicional'])}" if next_info["adicional"] > 0 else "Disponible",
+                    tag_variant="warning" if next_info["adicional"] > 0 else "success",
+                    tone="accent",
+                    stats=[
+                        ("Saldo libre actual", money(restante)),
+                        ("Ajuste necesario", money(next_info["adicional"])),
+                    ],
+                    compact=False,
+                )
             )
-        )
-    _render_cards(resumen_cards)
+        _render_cards(resumen_cards)
 
 tab_candidatas, tab_seleccion = st.tabs([
     "Candidatas a Pago",
