@@ -20,9 +20,25 @@ def _safe_to_datetime(s: pd.Series) -> pd.Series:
     except Exception:
         return pd.to_datetime(pd.NaT)
 
-def ensure_derived_fields(df_in: pd.DataFrame) -> pd.DataFrame:
-    """Crea columnas derivadas comunes sin modificar df original."""
-    df = df_in.copy()
+def ensure_derived_fields(df_in: pd.DataFrame | None) -> pd.DataFrame:
+    """Crea columnas derivadas comunes sin modificar ``df_in``.
+
+    Cuando la entrada es ``None`` se retorna un ``DataFrame`` vacío para que
+    los consumidores puedan continuar con una estructura válida sin errores de
+    atributo. Esto ocurre, por ejemplo, en las páginas de Streamlit antes de que
+    el usuario cargue información.
+    """
+
+    if df_in is None:
+        return pd.DataFrame()
+
+    if not isinstance(df_in, pd.DataFrame):
+        try:
+            df = pd.DataFrame(df_in)
+        except Exception:
+            return pd.DataFrame()
+    else:
+        df = df_in.copy()
 
     # Fechas y montos
     for c in ["fac_fecha_factura", "fecha_autoriza", "fecha_pagado", "fecha_cc"]:
