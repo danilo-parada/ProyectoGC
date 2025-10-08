@@ -3,6 +3,7 @@
 
 import html
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -141,8 +142,7 @@ def _metrics_explainer_block(title: str, thr_exc: int, thr_good: int, thr_ok: in
 def _render_metric_cards(cards: list[dict[str, str]]):
     if not cards:
         return
-
-    card_blocks: list[str] = []
+    pieces = ["<div class='forecast-card-grid'>"]
     for card in cards:
         label = html.escape(card.get("label", ""))
         value = html.escape(card.get("value", ""))
@@ -150,22 +150,20 @@ def _render_metric_cards(cards: list[dict[str, str]]):
         foot_is_html = card.get("foot_is_html", False)
         if foot:
             foot_html = foot if foot_is_html else html.escape(foot)
-            foot_block = f"<p class=\"forecast-card__foot\">{foot_html}</p>"
+            foot_block = f"<p class='forecast-card__foot'>{foot_html}</p>"
         else:
             foot_block = ""
-
-        card_blocks.append(
-            (
-                "<div class=\"forecast-card\">"
-                f"<span class=\"forecast-card__label\">{label}</span>"
-                f"<span class=\"forecast-card__value\">{value}</span>"
-                f"{foot_block}"
-                "</div>"
-            )
+        pieces.append(
+            """
+            <div class="forecast-card">
+                <span class="forecast-card__label">{label}</span>
+                <span class="forecast-card__value">{value}</span>
+                {foot_block}
+            </div>
+            """.format(label=label, value=value, foot_block=foot_block)
         )
-
-    markup = "<div class='forecast-card-grid'>" + "".join(card_blocks) + "</div>"
-    st.markdown(markup, unsafe_allow_html=True)
+    pieces.append("</div>")
+    st.markdown("".join(pieces), unsafe_allow_html=True)
 
 
 def _mape_status(mape_val: float, thr_exc: int, thr_good: int, thr_ok: int):
