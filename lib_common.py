@@ -1,6 +1,7 @@
 # lib_common.py
 from __future__ import annotations
 import html
+import re
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -12,6 +13,30 @@ import numpy as np
 import pandas as pd
 from pandas.io.formats.style import Styler
 import streamlit as st
+
+_DIV_CLOSE_RE = re.compile(r'^\s*</div>\s*$', re.I)
+_DIV_TAG_RE = re.compile(r'^\s*</?div>\s*$', re.I)
+
+
+def sanitize_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Reemplaza celdas que contienen exclusivamente etiquetas ``<div>``."""
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+    return df.replace({_DIV_TAG_RE: ""}, regex=True)
+
+
+def safe_markdown(html: str):
+    """Evita imprimir cierres huérfanos y HTML desbalanceado en bloques cortos."""
+
+    if _DIV_CLOSE_RE.match(html or ""):
+        return
+    normalized = (html or "")
+    opens = normalized.lower().count("<div")
+    closes = normalized.lower().count("</div>")
+    if closes > opens:
+        return
+    st.markdown(normalized, unsafe_allow_html=True)
 
 # ============================================================
 # 1) Columnas esperadas en la BBDD principal (facturas)
@@ -125,7 +150,15 @@ def style_table(
     row_height = 52
 
     if isinstance(df, Styler):
-        st.markdown(
+        try:
+            df = df.copy()
+        except AttributeError:
+            pass
+        try:
+            df.data = sanitize_df(df.data)  # type: ignore[attr-defined]
+        except AttributeError:
+            pass
+        safe_markdown(
             """
             <style>
             .styled-table-wrapper {
@@ -153,8 +186,7 @@ def style_table(
                 font-weight: 700;
             }
             </style>
-            """,
-            unsafe_allow_html=True,
+            """
         )
         extra_style = ""
         if visible_rows is not None and visible_rows > 0:
@@ -168,17 +200,17 @@ def style_table(
         for unwanted in ("&lt;div&gt;&lt;/div&gt;", "<div></div>"):
             if unwanted in table_html:
                 table_html = table_html.replace(unwanted, "")
-        st.markdown(
+        safe_markdown(
             f"""
             <div class="styled-table-wrapper" style="{extra_style}">
                 {table_html}
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
     else:
         if visible_rows is not None and visible_rows > 0:
             height = header_height + visible_rows * row_height
+        df = sanitize_df(df)
         st.dataframe(df, use_container_width=use_container_width, height=height)
 
 # ============================================================
@@ -199,14 +231,14 @@ def load_ui_theme():
         except FileNotFoundError:
             _THEME_CSS_CACHE = ""
     if _THEME_CSS_CACHE:
-        st.markdown(f"<style>{_THEME_CSS_CACHE}</style>", unsafe_allow_html=True)
+        safe_markdown(f"<style>{_THEME_CSS_CACHE}</style>")
 
 def header_ui(title: str, current_page: str, subtitle: str | None = None):
     load_ui_theme()
     safe_title = html.escape(str(title))
     safe_page = html.escape(str(current_page))
     sub_html = f'<p class="app-hero__subtitle">{html.escape(str(subtitle))}</p>' if subtitle else ""
-    st.markdown(
+    safe_markdown(
         f"""
         <div class="app-hero">
             <div class="app-hero__titles">
@@ -215,8 +247,7 @@ def header_ui(title: str, current_page: str, subtitle: str | None = None):
             </div>
             <div class="app-hero__badge">{safe_page}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 

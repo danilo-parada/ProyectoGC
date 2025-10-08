@@ -10,6 +10,8 @@ from lib_common import (
     get_honorarios_df,
     clean_estado_cuota,
     money,
+    sanitize_df,
+    safe_markdown,
 )
 
 st.set_page_config(page_title="Honorarios", layout="wide")
@@ -32,6 +34,9 @@ df = clean_estado_cuota(df_hon.copy())
 if df is None or df.empty:
     st.warning("No hay honorarios validos despues de limpiar estado_cuota.")
     st.stop()
+
+_df = sanitize_df(df)
+df = _df if isinstance(_df, pd.DataFrame) else df
 
 df["estado_cuota"] = df["estado_cuota"].astype(str)
 
@@ -105,7 +110,7 @@ pct_no_pagadas_total = (count_no_pagadas / total_docs * 100.0) if total_docs els
 
 st.subheader("Resumen de honorarios")
 
-st.markdown(
+safe_markdown(
     """
     <style>
     .honorarios-metric-card {
@@ -166,7 +171,6 @@ st.markdown(
     }
     </style>
     """,
-    unsafe_allow_html=True,
 )
 
 ce_available = "cuenta_especial" in df.columns
@@ -201,7 +205,7 @@ def _render_metric_block(title: str, main_value: str, footer: str | None = None,
     if breakdown_html:
         parts.append(breakdown_html)
     parts.append("</div>")
-    st.markdown("".join(parts), unsafe_allow_html=True)
+    safe_markdown("".join(parts))
 
 if ce_available and count_pagadas:
     pagadas_ce_flag = ce_flag_all.loc[pagadas.index]
@@ -398,9 +402,8 @@ if count_pagadas:
         serie_real_total = pagadas_view.loc[mask_atraso_view, "tiempo_pago_real"].dropna()
 
         st.markdown("#### Histogramas de tiempos (solo PAGADAS)")
-        st.markdown(
+        safe_markdown(
             f"<div style='font-size:20px; font-weight:600;'>Total observaciones planificado: {len(serie_plan_total):,} | Con atraso: {len(serie_real_total):,}</div>",
-            unsafe_allow_html=True,
         )
         bin_size = st.slider("Ancho de clase (dias)", 1, 60, 1, key="hon_hist_bin")
         hist_cols = st.columns(2)
@@ -425,12 +428,9 @@ if count_pagadas:
                 vals_same_day = pagadas_view.loc[mask_same_day_view, "tiempo_pago_planeado"].dropna()
                 vals_anticipada = pagadas_view.loc[mask_anticipada_view, "tiempo_pago_planeado"].dropna()
                 vals_especial = pagadas_view.loc[mask_especial_view, "tiempo_pago_planeado"].dropna()
-                st.markdown(
-                    (
-                        "<div style='font-size:18px; font-weight:600;'>Desglose dentro de plazo</div>"
-                        f"<div style='font-size:18px;'>Mismo dia: {count_same_day_view:,} | Anticipadas: {count_anticipada_view:,} | Especiales: {count_especial_view:,}</div>"
-                    ),
-                    unsafe_allow_html=True,
+                safe_markdown(
+                    "<div style='font-size:18px; font-weight:600;'>Desglose dentro de plazo</div>"
+                    f"<div style='font-size:18px;'>Mismo dia: {count_same_day_view:,} | Anticipadas: {count_anticipada_view:,} | Especiales: {count_especial_view:,}</div>"
                 )
                 if not vals_same_day.empty:
                     fig_plan.add_trace(go.Histogram(x=vals_same_day, xbins=dict(size=bin_size), name="Mismo dia", opacity=0.7, marker_color="#4E79A7"))
@@ -444,9 +444,8 @@ if count_pagadas:
                     fig_plan.add_vline(x=stats_plan_view["mean"], line_color="#E15759", line_dash="dash", annotation_text=f"Promedio {stats_plan_view['mean']:.1f}d", annotation_position="top")
                 st.plotly_chart(fig_plan, use_container_width=True)
                 if stats_plan_view:
-                    st.markdown(
-                        f"<div style='font-size:24px; margin-top:4px;'>Total: {len(serie_plan_total):,} | Promedio: {stats_plan_view['mean']:.1f} dias | P50: {stats_plan_view['p50']:.1f} | P75: {stats_plan_view['p75']:.1f} | P90: {stats_plan_view['p90']:.1f}</div>",
-                        unsafe_allow_html=True,
+                    safe_markdown(
+                        f"<div style='font-size:24px; margin-top:4px;'>Total: {len(serie_plan_total):,} | Promedio: {stats_plan_view['mean']:.1f} dias | P50: {stats_plan_view['p50']:.1f} | P75: {stats_plan_view['p75']:.1f} | P90: {stats_plan_view['p90']:.1f}</div>"
                     )
 
                 with st.expander('Detalle del calculo del tiempo planificado'):
@@ -465,9 +464,8 @@ if count_pagadas:
             else:
                 fig_real = go.Figure()
                 fig_real.add_trace(go.Histogram(x=serie_real_total, xbins=dict(size=bin_size), name="Pagadas con atraso", opacity=0.85, marker_color="#E15759"))
-                st.markdown(
-                    f"<div style='font-size:20px; font-weight:600;'>Total observaciones (atraso): {len(serie_real_total):,}</div>",
-                    unsafe_allow_html=True,
+                safe_markdown(
+                    f"<div style='font-size:20px; font-weight:600;'>Total observaciones (atraso): {len(serie_real_total):,}</div>"
                 )
                 stats_real_view = _stats(serie_real_total)
                 if stats_real_view:
@@ -475,9 +473,8 @@ if count_pagadas:
                 fig_real.update_layout(barmode="overlay", xaxis_title="Dias", yaxis_title="Cantidad de honorarios", legend=dict(orientation="h", yanchor="bottom", y=-0.15))
                 st.plotly_chart(fig_real, use_container_width=True)
                 if stats_real_view:
-                    st.markdown(
-                        f"<div style='font-size:24px; margin-top:4px;'>Total: {len(serie_real_total):,} | Promedio: {stats_real_view['mean']:.1f} dias | P50: {stats_real_view['p50']:.1f} | P75: {stats_real_view['p75']:.1f} | P90: {stats_real_view['p90']:.1f}</div>",
-                        unsafe_allow_html=True,
+                    safe_markdown(
+                        f"<div style='font-size:24px; margin-top:4px;'>Total: {len(serie_real_total):,} | Promedio: {stats_real_view['mean']:.1f} dias | P50: {stats_real_view['p50']:.1f} | P75: {stats_real_view['p75']:.1f} | P90: {stats_real_view['p90']:.1f}</div>"
                     )
 
                 with st.expander('Detalle del calculo del tiempo real pagado'):

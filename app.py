@@ -4,7 +4,7 @@ import streamlit as st
 
 from lib_common import (
     # setup / UI
-    init_session_keys, read_any, style_table, header_ui,
+    init_session_keys, read_any, style_table, header_ui, sanitize_df, safe_markdown,
     mapping_ui, apply_mapping, normalize_types,
     # data state
     get_df_norm, register_documents, reset_docs, reset_masters, reset_honorarios,
@@ -169,25 +169,25 @@ with col_cta:
     if st.button("Reset cuentas", key="card_reset_cta", use_container_width=True):
         reset_cuentas_especiales()
         _flash_and_rerun("warning", "Maestra de cuentas especiales eliminada.")
-    st.markdown(card_cta_html, unsafe_allow_html=True)
+    safe_markdown(card_cta_html)
 
 with col_prov:
     if st.button("Reset proveedores", key="card_reset_prov", use_container_width=True):
         reset_proveedores()
         _flash_and_rerun("warning", "Proveedores prioritarios eliminados.")
-    st.markdown(card_prov_html, unsafe_allow_html=True)
+    safe_markdown(card_prov_html)
 
 with col_hon:
     if st.button("Reset honorarios", key="card_reset_hon", use_container_width=True):
         reset_honorarios()
         _flash_and_rerun("warning", "Honorarios eliminados de la sesion.")
-    st.markdown(card_hon_html, unsafe_allow_html=True)
+    safe_markdown(card_hon_html)
 
 with col_fact:
     if st.button("Reset facturas", key="card_reset_fact", use_container_width=True):
         reset_docs()
         _flash_and_rerun("warning", "Facturas eliminadas de la sesion actual.")
-    st.markdown(card_fact_html, unsafe_allow_html=True)
+    safe_markdown(card_fact_html)
 
 flash_payload = ss.pop("_ui_flash", None)
 if flash_payload:
@@ -204,7 +204,7 @@ tab_cta, tab_prov, tab_hon, tab_fact = st.tabs([
 
 with tab_cta:
     st.markdown("#### 1. Maestra de cuentas (obligatorio)")
-    st.markdown(
+    safe_markdown(
         """
         <div class="app-note">
             Archivo requerido con columnas: <code>ano_proyecto</code>, <code>codigo_contable</code>,
@@ -212,7 +212,6 @@ with tab_cta:
             <code>cuenta_cont_descripcion</code>, <code>sede_pago</code>.
         </div>
         """,
-        unsafe_allow_html=True,
     )
     maestra_file = st.file_uploader(
         "Sube la maestra de cuentas (xlsx/csv)",
@@ -233,17 +232,16 @@ with tab_cta:
             st.error(f"No se pudo leer la maestra de cuentas: {e}")
     with st.expander("Vista previa maestra (200 filas)", expanded=False):
         if isinstance(ss.get("df_ctaes_raw"), pd.DataFrame):
-            style_table(ss["df_ctaes_raw"].head(200))
+            style_table(sanitize_df(ss["df_ctaes_raw"].head(200)))
 
 with tab_prov:
     st.markdown("#### 2. Proveedores prioritarios (opcional)")
-    st.markdown(
+    safe_markdown(
         """
         <div class="app-note">
             Archivo con columna <code>codigo_proveedor</code> (puede incluir otros campos).
         </div>
         """,
-        unsafe_allow_html=True,
     )
     prov_file = st.file_uploader(
         "Sube listado de proveedores prioritarios (xlsx/csv)",
@@ -264,17 +262,16 @@ with tab_prov:
             st.error(f"No se pudo leer el archivo de proveedores prioritarios: {e}")
     with st.expander("Vista previa proveedores prioritarios", expanded=False):
         if isinstance(ss.get("df_prio_raw"), pd.DataFrame):
-            style_table(ss["df_prio_raw"].head(200))
+            style_table(sanitize_df(ss["df_prio_raw"].head(200)))
 
 with tab_hon:
     st.markdown("#### 3. Honorarios (opcional)")
-    st.markdown(
+    safe_markdown(
         """
         <div class="app-note">
             Se descartan filas sin <code>estado_cuota</code> y se normalizan los campos clave antes de guardar.
         </div>
         """,
-        unsafe_allow_html=True,
     )
     honorarios_file = st.file_uploader(
         "Sube archivo de honorarios (xlsx/csv)",
@@ -372,17 +369,16 @@ with tab_hon:
     with st.expander("Honorarios normalizados (vista previa)", expanded=False):
         df_hon_norm = ss.get("honorarios")
         if isinstance(df_hon_norm, pd.DataFrame) and not df_hon_norm.empty:
-            style_table(df_hon_norm.head(200))
+            style_table(sanitize_df(df_hon_norm.head(200)))
 
 with tab_fact:
     st.markdown("#### 4. Facturas")
-    st.markdown(
+    safe_markdown(
         """
         <div class="app-note">
             Carga uno o varios archivos y luego mapea columnas para habilitar todos los tableros.
         </div>
         """,
-        unsafe_allow_html=True,
     )
 
     files = st.file_uploader(
@@ -427,45 +423,42 @@ with tab_fact:
 
     with st.expander("Base normalizada (vista previa 200 filas)", expanded=False):
         if isinstance(ss.get("df"), pd.DataFrame):
-            style_table(ss["df"].head(200))
+            style_table(sanitize_df(ss["df"].head(200)))
 
-st.markdown('<div class="app-separator"></div>', unsafe_allow_html=True)
+safe_markdown('<div class="app-separator"></div>')
 
 df = get_df_norm()
 if df is None:
     df_cached = ss.get("df_cache")
     if isinstance(df_cached, pd.DataFrame) and not df_cached.empty:
         df = df_cached
-        st.markdown(
+        safe_markdown(
             """
             <div class="app-note">
                 Mostrando el ultimo resumen calculado (sin cambios nuevos).
             </div>
             """,
-            unsafe_allow_html=True,
         )
     else:
-        st.markdown(
+        safe_markdown(
             """
             <div class="app-note">
                 Aun no hay base normalizada. Carga y mapea tus documentos para revisar el resumen.
             </div>
             """,
-            unsafe_allow_html=True,
         )
         st.stop()
 else:
     ss["df_cache"] = df
     ss["_match_timestamp_view"] = ss.get("_match_timestamp")
 
-st.markdown('<div class="app-separator"></div>', unsafe_allow_html=True)
+safe_markdown('<div class="app-separator"></div>')
 
-st.markdown(
+safe_markdown(
     """
     <div style="text-align:center;font-size:0.85rem;color:var(--app-text-muted);padding:1.2rem 0 2rem;">
         Desarrollado por <strong>Danilo Parada Ulloa</strong>
     </div>
     """,
-    unsafe_allow_html=True,
 )
 

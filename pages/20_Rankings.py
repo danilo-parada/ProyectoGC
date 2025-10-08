@@ -6,7 +6,8 @@ import numpy as np
 
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
-    advanced_filters_ui, apply_advanced_filters, header_ui, style_table, money
+    advanced_filters_ui, apply_advanced_filters, header_ui, style_table, money,
+    sanitize_df, safe_markdown
 )
 from lib_report import excel_bytes_single, excel_bytes_multi
 
@@ -241,13 +242,13 @@ def _style_headers(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
     return sty
 
 # -------- Explicación de la regla --------
-st.markdown("---")
+safe_markdown("---")
 st.info("**Nota:** Un proveedor o centro se clasifica como *Prioritario* o *Cuenta Especial* = 'Sí' "
         "cuando el **50% o más** de sus documentos cumplen con esa condición en el período analizado. "
         "Las métricas y porcentajes reflejan el estado **actual** según los filtros globales y locales.")
 
 # -------- Top Proveedores --------
-st.markdown("---")
+safe_markdown("---")
 st.subheader("Top Proveedores")
 prov = agregar_ranking(
     dfp_f,
@@ -258,6 +259,7 @@ prov = agregar_ranking(
 # Formato de pantalla (no afecta Excel)
 prov_disp = _format_percent_cols_for_display(prov, ["% Cuenta Especial"])
 prov_disp = _format_money_cols_for_display(prov_disp, ["Monto Pagado"])
+prov_disp = sanitize_df(prov_disp)
 style_table(_style_headers(prov_disp))
 st.download_button(
     "⬇️ Descargar Ranking de Proveedores",
@@ -266,7 +268,7 @@ st.download_button(
 )
 
 # -------- Top Centros de Costo --------
-st.markdown("---")
+safe_markdown("---")
 st.subheader("Top Centros de Costo")
 if "nombre_centro_costo" in dfp_f.columns:
     cc = agregar_ranking(
@@ -277,6 +279,7 @@ if "nombre_centro_costo" in dfp_f.columns:
     )
     cc_disp = _format_percent_cols_for_display(cc, ["% Prioritario"])
     cc_disp = _format_money_cols_for_display(cc_disp, ["Monto Pagado"])
+    cc_disp = sanitize_df(cc_disp)
     style_table(_style_headers(cc_disp))
     st.download_button(
         "⬇️ Descargar Ranking de Centros de Costo",
@@ -337,7 +340,7 @@ def resumen_global(dfin: pd.DataFrame) -> dict[str, pd.DataFrame]:
     return out
 
 # -------- Exportar todo a Excel (multi-hoja) --------
-st.markdown("---")
+safe_markdown("---")
 st.subheader("Exportar Resultados de Rankings a Excel")
 
 sheets = {"RankingProveedores": prov}

@@ -12,7 +12,7 @@ from core.utils import LABELS, TOOLTIPS
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
     advanced_filters_ui, apply_advanced_filters, money, one_decimal, header_ui,
-    style_table,
+    style_table, sanitize_df, safe_markdown,
 )
 from lib_metrics import ensure_derived_fields, compute_kpis
 from lib_report import excel_bytes_single, generate_pdf_report
@@ -310,7 +310,7 @@ def _render_cards(cards: list[str], layout: str = "grid"):
         "grid-2": "app-grid-2",
         "grid-3": "app-grid-3",
     }.get(layout, "app-card-grid")
-    st.markdown(f'<div class="{wrapper}">{"".join(cards)}</div>', unsafe_allow_html=True)
+    safe_markdown(f'<div class="{wrapper}">{"".join(cards)}</div>')
 
 def _fmt_days(val: float) -> str:
     return "s/d" if pd.isna(val) else f"{one_decimal(val)} d"
@@ -388,7 +388,7 @@ else:
     _render_cards(cards)
 
     if "cuenta_especial" in df.columns:
-        st.markdown('<div class="app-separator"></div>', unsafe_allow_html=True)
+safe_markdown('<div class="app-separator"></div>')
         st.markdown("### Desglose por cuenta especial")
         segment_cards: list[str] = []
         for flag in (True, False):
@@ -466,6 +466,7 @@ if not df_pag.empty:
             "Días Promedio Pago": rankings_df["Días Promedio Pago"].map(one_decimal),
         }
     )
+    rankings_display = sanitize_df(rankings_display)
     style_table(_table_style(rankings_display))
     st.download_button(
         "⬇️ Descargar Ranking",
@@ -497,11 +498,10 @@ else:
     n2 = df_nopag[df_nopag["Nivel"].eq("Doc. Pendiente de Autorización")] if "Nivel" in df_nopag else df_nopag.iloc[0:0]
 
 def draw_debt_panel(title: str, dpanel: pd.DataFrame):
-    st.markdown(
+    safe_markdown(
         '<div class="app-title-block"><h3 style="color:#000;">'
         + html.escape(title)
-        + '</h3><p>Desglose por cuenta especial</p></div>',
-        unsafe_allow_html=True,
+        + '</h3><p>Desglose por cuenta especial</p></div>'
     )
     if "cuenta_especial" not in dpanel:
         st.info("Sin campo de Cuenta Especial para desglosar.")
@@ -667,6 +667,7 @@ if not df_nopag_loc.empty and "fecha_venc_30" in df_nopag_loc:
         small = flujo.head(3).rename(columns={"Fecha":"Día","Monto_a_Pagar":"Monto a Pagar","Cant_Facturas":"Cant. Facturas"})
         small_display = small.copy()
         small_display["Monto a Pagar"] = small_display["Monto a Pagar"].map(money)
+        small_display = sanitize_df(small_display)
         style_table(_table_style(small_display))
         fig = go.Figure()
         fig.add_bar(x=flujo["Fecha"], y=flujo["Monto_a_Pagar"], name="Monto Diario")
@@ -756,17 +757,16 @@ else:
     if budget_input_key not in st.session_state:
         st.session_state[budget_input_key] = _format_currency_plain(current_amount)
 
-    st.markdown(_BUDGET_PANEL_STYLE, unsafe_allow_html=True)
+safe_markdown(_BUDGET_PANEL_STYLE)
 
     with st.container():
-        st.markdown(
+        safe_markdown(
             """
             <div class="budget-panel">
                 <div class="budget-panel__title">Monto disponible hoy</div>
                 <div class="budget-panel__subtitle">Define tu presupuesto diario considerando cuentas críticas y prioridades.</div>
                 <div class="budget-panel__input-wrapper">
-            """,
-            unsafe_allow_html=True,
+            """
         )
         col_input, col_resume = st.columns([2.5, 1.5])
         with col_input:
@@ -791,15 +791,15 @@ else:
         with col_resume:
             amount_col, action_col = st.columns([1.7, 1.3])
             with amount_col:
-                st.markdown(
+                resume_html = (
                     f"""
                     <div class=\"budget-panel__resume\">
                         <span class=\"budget-panel__resume-label\">Equivale a</span>
                         <span class=\"budget-panel__resume-value\">{money(monto_presu)}</span>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
+                    """
                 )
+                safe_markdown(resume_html)
             with action_col:
                 if next_info:
                     help_text = (
@@ -822,26 +822,22 @@ else:
                             st.rerun()
                         except AttributeError:
                             st.experimental_rerun()
-                    st.markdown(
-                        f"<p class='budget-panel__resume-note'>Próxima: {next_info['proveedor']} — Factura {next_info['documento']} ({money(next_info['monto'])})</p>",
-                        unsafe_allow_html=True,
+                    safe_markdown(
+                        f"<p class='budget-panel__resume-note'>Próxima: {next_info['proveedor']} — Factura {next_info['documento']} ({money(next_info['monto'])})</p>"
                     )
-                    st.markdown(
-                        f"<p class='budget-panel__resume-note budget-panel__resume-note--muted'>Ajuste necesario: {money(next_info['adicional'])}</p>",
-                        unsafe_allow_html=True,
+                    safe_markdown(
+                        f"<p class='budget-panel__resume-note budget-panel__resume-note--muted'>Ajuste necesario: {money(next_info['adicional'])}</p>"
                     )
                 else:
-                    st.markdown(
-                        "<p class='budget-panel__resume-note budget-panel__resume-note--muted'>No hay facturas adicionales por agregar.</p>",
-                        unsafe_allow_html=True,
+                    safe_markdown(
+                        "<p class='budget-panel__resume-note budget-panel__resume-note--muted'>No hay facturas adicionales por agregar.</p>"
                     )
-        st.markdown(
+        safe_markdown(
             """
                 </div>
                 <div class="budget-panel__helper">El valor se guarda automáticamente para esta sesión y se utilizará en el reporte PDF.</div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
 
@@ -880,6 +876,8 @@ tab_candidatas, tab_seleccion = st.tabs([
 
 candidatas_display = _prep_show(candidatas_prior)
 seleccion_display = _prep_show(seleccion)
+candidatas_display = sanitize_df(candidatas_display)
+seleccion_display = sanitize_df(seleccion_display)
 
 with tab_candidatas:
     st.markdown("**Candidatas a Pago (todas las facturas — ordenadas por riesgo de aprobación)**")
@@ -892,13 +890,12 @@ with tab_candidatas:
     )
 
 with tab_seleccion:
-    st.markdown(
+    safe_markdown(
         """
         <div class="app-note">
             <strong>Selección a pagar hoy</strong> — bloque crítico de pagos.
         </div>
         """,
-        unsafe_allow_html=True,
     )
     style_table(_table_style(seleccion_display), visible_rows=15)
     st.download_button(
