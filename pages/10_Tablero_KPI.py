@@ -20,6 +20,7 @@ from lib_metrics import (
     compute_kpis,
     apply_common_filters,
     compute_monto_pagado_real,
+    compute_dic_split,
 )
 from lib_report import excel_bytes_multi
 
