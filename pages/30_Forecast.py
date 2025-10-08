@@ -150,21 +150,20 @@ def _render_metric_cards(cards: list[dict[str, str]]):
         foot_is_html = card.get("foot_is_html", False)
         if foot:
             foot_html = foot if foot_is_html else html.escape(foot)
-            foot_block = f"<p class=\"forecast-card__foot\">{foot_html}</p>"
+            foot_block = f"<p class='forecast-card__foot'>{foot_html}</p>"
         else:
             foot_block = ""
-        card_markup = (
-            "<div class=\"forecast-card\">"
-            f"<span class=\"forecast-card__label\">{label}</span>"
-            f"<span class=\"forecast-card__value\">{value}</span>"
-            f"{foot_block}"
-            "</div>"
+        pieces.append(
+            """
+            <div class="forecast-card">
+                <span class="forecast-card__label">{label}</span>
+                <span class="forecast-card__value">{value}</span>
+                {foot_block}
+            </div>
+            """.format(label=label, value=value, foot_block=foot_block)
         )
-        pieces.append(card_markup)
     pieces.append("</div>")
-    rows = max(1, (len(cards) + 2) // 3)
-    height = 160 * rows
-    components.html("".join(pieces), height=height, scrolling=False)
+    st.markdown("".join(pieces), unsafe_allow_html=True)
 
 
 def _mape_status(mape_val: float, thr_exc: int, thr_good: int, thr_ok: int):
