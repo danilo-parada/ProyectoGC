@@ -716,15 +716,15 @@ else:
             presupuesto_text = st.text_input(
                 "Monto disponible hoy",
                 value=st.session_state[budget_input_key],
-                key=budget_input_key,
                 label_visibility="collapsed",
                 help="Ingresa el monto en CLP. Puedes usar puntos o comas como separador de miles/decimales.",
             )
             monto_presu = float(round(_parse_currency_input(presupuesto_text, current_amount)))
             st.session_state[_LOCAL_AMOUNT_KEY] = monto_presu
             formatted_text = _format_currency_plain(monto_presu)
-            if formatted_text != st.session_state[budget_input_key]:
+            if presupuesto_text != formatted_text:
                 st.session_state[budget_input_key] = formatted_text
+                st.experimental_rerun()
         with col_resume:
             st.markdown(
                 f"""
