@@ -513,6 +513,10 @@ else:
             "dias_a_vencer":"Días a Vencer","importe_regla":"Monto",
             "cuenta_corriente":"Cuenta Corriente","banco":"Banco"
         })
+        for col in ("Fecha Factura", "Fecha Venc."):
+            if col in show:
+                fechas = pd.to_datetime(show[col], errors="coerce")
+                show[col] = fechas.dt.strftime("%d-%m-%Y").fillna("s/d")
         if "Proveedor Prioritario" in show:
             show["Proveedor Prioritario"] = show["Proveedor Prioritario"].map({True:"Sí", False:"No"})
         if "Cuenta Especial" in show:
@@ -540,7 +544,8 @@ else:
         return out
 
     st.markdown("**Candidatas a Pago (según criterio elegido)**")
-    st.dataframe(_prep_show(prior), use_container_width=True)
+    candidatas_display = _prep_show(prior)
+    style_table(_table_style(candidatas_display))
     st.download_button(
         "⬇️ Descargar Candidatas",
         data=excel_bytes_single(_prep_export(prior), "Candidatas"),
@@ -555,7 +560,8 @@ else:
         """,
         unsafe_allow_html=True,
     )
-    st.dataframe(_prep_show(seleccion), use_container_width=True)
+    seleccion_display = _prep_show(seleccion)
+    style_table(_table_style(seleccion_display))
     st.download_button(
         "⬇️ Descargar Selección de Hoy",
         data=excel_bytes_single(_prep_export(seleccion), "PagoHoy"),
