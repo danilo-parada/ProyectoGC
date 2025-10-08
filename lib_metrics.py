@@ -91,19 +91,19 @@ def compute_kpis(df: pd.DataFrame) -> Dict[str, float]:
     monto_aut_sin_pago = float(aut_sp.get("monto_autorizado", pd.Series(dtype=float)).sum())
     cnt_pag, cnt_aut, cnt_sin = len(pag), len(aut_sp), len(d) - len(pag) - len(aut_sp)
 
-    # DSO
+    # DPP (antes DSO)
     dso = 0.0
     if "dias_a_pago_calc" in pag.columns:
         v = pag.loc[pag["dias_a_pago_calc"] >= 0, "dias_a_pago_calc"].dropna()
         if not v.empty: dso = float(v.mean())
 
-    # TFA
+    # DIC (antes TFC/TFA)
     tfa = 0.0
     if "dias_factura_autorizacion" in d.columns:
         v = d.loc[d["dias_factura_autorizacion"] >= 0, "dias_factura_autorizacion"].dropna()
         if not v.empty: tfa = float(v.mean())
 
-    # TPA
+    # DCP (antes TPC/TPA)
     tpa = 0.0
     if "dias_autorizacion_pago_calc" in pag.columns:
         v = pag.loc[pag["dias_autorizacion_pago_calc"] >= 0, "dias_autorizacion_pago_calc"].dropna()
