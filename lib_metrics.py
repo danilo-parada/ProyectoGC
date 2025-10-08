@@ -21,7 +21,7 @@ def ensure_derived_fields(df_in: pd.DataFrame) -> pd.DataFrame:
     df = df_in.copy()
 
     # Fechas y montos
-    for c in ["fac_fecha_factura", "fecha_autoriza", "fecha_pagado"]:
+    for c in ["fac_fecha_factura", "fecha_autoriza", "fecha_pagado", "fecha_cc"]:
         if c in df.columns: df[c] = _safe_to_datetime(df[c])
     for c in ["fac_monto_total", "monto_autorizado", "monto_pagado", "con_oc"]:
         if c in df.columns: df[c] = _safe_to_numeric(df[c], default=0.0)
@@ -99,9 +99,19 @@ def compute_kpis(df: pd.DataFrame) -> Dict[str, float]:
 
     # DIC (antes TFC/TFA)
     tfa = 0.0
-    if "dias_factura_autorizacion" in d.columns:
+    if {"fac_fecha_factura", "fecha_cc"}.issubset(d.columns):
+        fac = pd.to_datetime(d["fac_fecha_factura"], errors="coerce")
+        cc = pd.to_datetime(d["fecha_cc"], errors="coerce")
+        estado = d.get("estado_pago", pd.Series(False, index=d.index, dtype=bool))
+        mask = estado.eq("pagada") & cc.notna() & fac.notna()
+        v = (cc - fac).dt.days.where(mask)
+        v = v[v >= 0].dropna()
+        if not v.empty:
+            tfa = float(v.mean())
+    elif "dias_factura_autorizacion" in d.columns:
         v = d.loc[d["dias_factura_autorizacion"] >= 0, "dias_factura_autorizacion"].dropna()
-        if not v.empty: tfa = float(v.mean())
+        if not v.empty:
+            tfa = float(v.mean())
 
     # DCP (antes TPC/TPA)
     tpa = 0.0
