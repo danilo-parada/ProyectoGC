@@ -21,10 +21,7 @@ PURP = "#8e44ad"   # línea promedio GLOBAL
 GRN  = "#2ecc71"
 
 def _metric_card(title: str, value: str, caption: str | None = None) -> str:
-    extra = (
-        f'<p style="margin-top:0.45rem;color:var(--app-text-muted);font-size:0.82rem;">{caption}</p>'
-        if caption else ""
-    )
+    extra = f'<p class="app-card__subtitle">{caption}</p>' if caption else ""
     return (
         '<div class="app-card">'
         f'<div class="app-card__title">{title}</div>'
@@ -37,7 +34,7 @@ def _metric_card(title: str, value: str, caption: str | None = None) -> str:
 def _stat_pill(label: str, value: str) -> str:
     return (
         '<div class="app-inline-stats__item">'
-        f'<span style="font-weight:600;color:var(--app-text);">{label}:</span> {value}'
+        f'<span class="app-inline-stats__label">{label}:</span> {value}'
         '</div>'
     )
 

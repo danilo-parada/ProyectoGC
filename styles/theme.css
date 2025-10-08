@@ -639,6 +639,114 @@ div[data-testid="stMetricValue"] {
   letter-spacing: 0.35px;
 }
 
+/* ==================== Normalizacion KPI & Tablas ==================== */
+:root {
+  --kpi-title-size: clamp(0.78rem, 0.25vw + 0.74rem, 0.92rem);
+  --kpi-value-size: clamp(1.85rem, 0.8vw + 1.7rem, 2.25rem);
+  --kpi-subtitle-size: clamp(0.9rem, 0.35vw + 0.86rem, 1.05rem);
+  --app-table-font-size: clamp(0.92rem, 0.25vw + 0.9rem, 1.05rem);
+  --app-table-header-fg: #ffffff;
+}
+
+.app-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.app-card__title {
+  font-size: var(--kpi-title-size);
+  letter-spacing: 0.4px;
+  color: var(--app-text-muted);
+}
+
+.app-card__value {
+  font-size: var(--kpi-value-size);
+  font-weight: 600;
+  color: var(--app-text);
+  line-height: 1.12;
+}
+
+.app-card__subtitle {
+  margin: 0;
+  font-size: var(--kpi-subtitle-size);
+  color: var(--app-text-muted);
+  line-height: 1.35;
+}
+
+.app-card__subtitle--muted {
+  color: var(--app-text-muted);
+}
+
+.app-card__trend {
+  font-size: var(--kpi-subtitle-size);
+  color: var(--app-success);
+}
+
+.app-card__trend--success {
+  color: var(--app-success);
+}
+
+.app-card__trend--warning {
+  color: var(--app-accent);
+}
+
+.app-inline-stats__item {
+  font-size: var(--kpi-subtitle-size);
+}
+
+.app-inline-stats__label {
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+/* Tablas base (st.table / st.dataframe / pandas styler) */
+div[data-testid="stTable"] table,
+.stDataFrame table,
+.styled-table-wrapper table,
+.ag-theme-streamlit {
+  font-size: var(--app-table-font-size);
+  color: var(--app-text);
+}
+
+div[data-testid="stTable"] thead tr,
+.stDataFrame table thead tr,
+.styled-table-wrapper table thead tr,
+.ag-theme-streamlit .ag-header {
+  background-color: var(--app-primary) !important;
+  color: var(--app-table-header-fg) !important;
+}
+
+div[data-testid="stTable"] thead th,
+.stDataFrame table thead th,
+.styled-table-wrapper table thead th,
+.ag-theme-streamlit .ag-header-cell,
+.ag-theme-streamlit .ag-header-cell-label {
+  background-color: transparent !important;
+  color: var(--app-table-header-fg) !important;
+  font-size: var(--app-table-font-size);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+div[data-testid="stTable"] tbody td,
+.stDataFrame table tbody td,
+.styled-table-wrapper table tbody td,
+.ag-theme-streamlit .ag-cell {
+  font-size: var(--app-table-font-size);
+  color: var(--app-text-muted);
+}
+
+.styled-table-wrapper thead th,
+.styled-table-wrapper thead tr {
+  border-radius: 0;
+}
+
+.ag-theme-streamlit .ag-header,
+.ag-theme-streamlit .ag-root-wrapper-body {
+  border-radius: var(--radius-md);
+}
+
 .forecast-card__foot {
   margin-top: 0.75rem;
   font-size: 0.85rem;
