@@ -56,12 +56,12 @@ if dfp.empty:
     st.stop()
 
 # -------- Filtros LOCALES (solo esta página) --------
-col_l1, col_l2 = st.columns(2)
+col_ce, col_prio, col_topn, col_order = st.columns([1, 1, 1, 1.3], gap="small")
 
 # Cuenta Especial (local)
 ce_local = "Todas"
 if "cuenta_especial" in dfp.columns:
-    ce_local = col_l1.radio(
+    ce_local = col_ce.radio(
         "Cuenta Especial (local)",
         options=["Todas", "Cuenta Especial", "No Cuenta Especial"],
         horizontal=True, index=0
@@ -70,7 +70,7 @@ if "cuenta_especial" in dfp.columns:
 # Prioritario (local)
 prio_local = "Todos"
 if "prov_prioritario" in dfp.columns:
-    prio_local = col_l2.radio(
+    prio_local = col_prio.radio(
         "Proveedor Prioritario (local)",
         options=["Todos", "Prioritario", "No Prioritario"],
         horizontal=True, index=0
@@ -93,9 +93,8 @@ def _apply_local_filters(dfin: pd.DataFrame) -> pd.DataFrame:
 dfp_f = _apply_local_filters(dfp)
 
 # -------- Parámetros de Ranking --------
-col_r1, col_r2 = st.columns([1,3])
-top_n = col_r1.slider("Seleccionar Top N", 5, 50, 20, 1)
-orden_metric = col_r2.radio(
+top_n = col_topn.slider("Seleccionar Top N", 5, 50, 20, 1)
+orden_metric = col_order.radio(
     "Ordenar por:",
     ["Monto Pagado", "Cantidad Documentos"],
     horizontal=True, index=0
