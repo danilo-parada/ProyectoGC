@@ -14,6 +14,9 @@ from lib_report import excel_bytes_single, excel_bytes_multi
 HEADER_BG = "var(--app-primary)"   # azul corporativo global
 HEADER_FG = "var(--app-table-header-fg)"   # texto encabezado global
 FONT_SIZE = "var(--app-table-font-size)"
+ROW_BORDER = "#d9e1ff"
+ROW_STRIPED_BG = "#f2f5ff"
+ROW_HOVER_BG = "#e0e8ff"
 
 st.set_page_config(page_title="Rankings", layout="wide")
 header_ui(
@@ -219,14 +222,14 @@ def _style_headers(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
             ("font-size", FONT_SIZE),
             ("padding", "14px 18px"),
             ("text-align", "right"),
-            ("border-bottom", "1px solid #e0e6ff"),
+            ("border-bottom", f"1px solid {ROW_BORDER}"),
             ("color", "var(--app-table-body-fg)")
         ]},
         {"selector": "tbody tr:nth-child(even)", "props": [
-            ("background-color", "#f5f7ff")
+            ("background-color", ROW_STRIPED_BG)
         ]},
         {"selector": "tbody tr:hover", "props": [
-            ("background-color", "#e8edff")
+            ("background-color", ROW_HOVER_BG)
         ]},
         {"selector": "tbody td:first-child", "props": [
             ("text-align", "left"),
