@@ -274,16 +274,6 @@ if df.empty or "fecha_pagado" not in df.columns or df["fecha_pagado"].isna().all
     st.info("No hay datos de pagos con los filtros seleccionados.")
     st.stop()
 
-with st.expander("¿Qué datos se usan para el forecast?", expanded=True):
-    st.markdown(
-        """
-- **Estado:** solo `pagada`.  
-- **Valor:** `monto_autorizado` (siempre > 0).  
-- **Fecha:** `fecha_pagado` (eje temporal).  
-Esto pronostica **flujos realizados** (útil para caja/presupuesto).
-        """
-    )
-
 df["fecha_pagado"] = pd.to_datetime(df["fecha_pagado"])
 df["importe"] = pd.to_numeric(df["monto_autorizado"], errors="coerce").fillna(0.0)
 
