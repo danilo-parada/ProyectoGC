@@ -1,6 +1,7 @@
 # 30_Forecast.py — Forecast con IC, métricas y explicación en General/CE/No CE.
 # Mantiene estilo previo. Descargas en Excel. Gráficos con IC y marcadores.
 
+import html
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -14,7 +15,8 @@ from scipy.stats import norm
 
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
-    advanced_filters_ui, apply_advanced_filters, header_ui, money, one_decimal
+    advanced_filters_ui, apply_advanced_filters, header_ui, money, one_decimal,
+    style_table
 )
 from lib_report import excel_bytes_single
 
@@ -132,6 +134,109 @@ def _metrics_explainer_block(title: str, thr_exc: int, thr_good: int, thr_ok: in
     st.markdown(
         "- Si el **IC es muy ancho** o el **MAPE** es alto, segmenta por **CE/No CE**, revisa estacionalidad "
         "o cambia/ajusta el modelo."
+    )
+
+
+# ------------------------ componentes de UI ------------------------ #
+def _render_metric_cards(cards: list[dict[str, str]]):
+    if not cards:
+        return
+    pieces = ["<div class='forecast-card-grid'>"]
+    for card in cards:
+        label = html.escape(card.get("label", ""))
+        value = html.escape(card.get("value", ""))
+        foot = card.get("foot")
+        foot_is_html = card.get("foot_is_html", False)
+        if foot:
+            foot_html = foot if foot_is_html else html.escape(foot)
+            foot_block = f"<p class=\"forecast-card__foot\">{foot_html}</p>"
+        else:
+            foot_block = ""
+        card_markup = (
+            "<div class=\"forecast-card\">"
+            f"<span class=\"forecast-card__label\">{label}</span>"
+            f"<span class=\"forecast-card__value\">{value}</span>"
+            f"{foot_block}"
+            "</div>"
+        )
+        pieces.append(card_markup)
+    pieces.append("</div>")
+    st.markdown("".join(pieces), unsafe_allow_html=True)
+
+
+def _mape_status(mape_val: float, thr_exc: int, thr_good: int, thr_ok: int):
+    if np.isnan(mape_val):
+        return "neutral", "MAPE no disponible"
+    if mape_val <= thr_exc:
+        return "success", f"Excelente · ≤ {thr_exc}%"
+    if mape_val <= thr_good:
+        return "info", f"Bueno · ≤ {thr_good}%"
+    if mape_val <= thr_ok:
+        return "warning", f"Aceptable · ≤ {thr_ok}%"
+    return "danger", f"Débil · > {thr_ok}%"
+
+
+def _mape_card(mape_val: float, thr_exc: int, thr_good: int, thr_ok: int) -> dict[str, str]:
+    variant, message = _mape_status(mape_val, thr_exc, thr_good, thr_ok)
+    if np.isnan(mape_val):
+        return {
+            "label": "MAPE",
+            "value": "N/A",
+            "foot": "Requiere valores reales positivos para calcularse.",
+        }
+    badge = (
+        f"<span class='forecast-chip forecast-chip--{variant}'>{html.escape(message)}</span>"
+        "<span class='forecast-foot-note'>Precisión in-sample</span>"
+    )
+    return {
+        "label": "MAPE",
+        "value": f"{one_decimal(mape_val)}%",
+        "foot": badge,
+        "foot_is_html": True,
+    }
+
+
+def _forecast_table_style(df_in: pd.DataFrame) -> pd.io.formats.style.Styler:
+    sty = df_in.style.hide(axis="index")
+    sty = sty.set_table_styles([
+        {"selector": "thead tr", "props": [
+            ("background-color", "#0d2f66"),
+            ("color", "#FFFFFF"),
+            ("text-transform", "uppercase"),
+            ("letter-spacing", "0.6px"),
+            ("font-weight", "600"),
+            ("font-size", "0.9rem"),
+        ]},
+        {"selector": "th", "props": [
+            ("background-color", "transparent"),
+            ("color", "#FFFFFF"),
+            ("padding", "12px 16px"),
+        ]},
+        {"selector": "tbody td", "props": [
+            ("font-size", "0.95rem"),
+            ("padding", "12px 16px"),
+            ("border-bottom", "1px solid #e0e6ff"),
+            ("color", "#132542"),
+        ]},
+        {"selector": "tbody tr:nth-child(even)", "props": [
+            ("background-color", "#f5f7ff"),
+        ]},
+        {"selector": "tbody tr:hover", "props": [
+            ("background-color", "#e8edff"),
+        ]},
+    ], overwrite=False)
+    if df_in.shape[1] > 1:
+        first_col = df_in.columns[0]
+        sty = sty.set_properties(subset=[first_col], **{"text-align": "left", "font-weight": "600"})
+        if df_in.shape[1] > 1:
+            sty = sty.set_properties(subset=df_in.columns[1:], **{"text-align": "right"})
+    return sty
+
+
+def _render_note(text: str):
+    st.markdown(
+        f"<p class='forecast-note'>{html.escape(text)}</p>",
+        unsafe_allow_html=True,
     )
 
 
@@ -323,49 +428,67 @@ if (ci_low_plot is not None) and (ci_high_plot is not None):
 fig.update_xaxes(tickformat=tick_format)
 st.plotly_chart(fig, use_container_width=True)
 if clip_fc or clip_ci:
-    st.caption("Nota: se recortó en 0 el forecast o el límite inferior por naturaleza de pagos.")
+    _render_note("Se recortó en 0 el forecast o el límite inferior por la naturaleza de los pagos.")
 
 # ------------------------ resumen + explicación (GENERAL) ------------------------ #
 st.subheader("4. Resumen Numérico del Pronóstico")
-s1, s2 = st.columns([1, 2])
-with s1:
-    avg_hist = float(y.mean())
-    avg_fc = float(np.mean(fc_plot["forecast"].values))
-    var_pct = ((avg_fc - avg_hist) / avg_hist) * 100 if avg_hist > 0 else 0.0
-    mae, rmse, mape = _metrics(y_true=y, y_hat=ts["tendencia"].fillna(y).values)
+avg_hist = float(y.mean())
+avg_fc = float(np.mean(fc_plot["forecast"].values))
+var_pct = ((avg_fc - avg_hist) / avg_hist) * 100 if avg_hist > 0 else 0.0
+mae, rmse, mape = _metrics(y_true=y, y_hat=ts["tendencia"].fillna(y).values)
 
-    st.metric("Promedio Histórico", money(avg_hist))
-    st.metric("Variación % Forecast vs Promedio", f"{one_decimal(var_pct)}%")
-    st.markdown("**Ajuste In-Sample (precisión del modelo en el histórico)**")
-    st.write(f"**MAE:** {money(mae)}")
-    st.write(f"**RMSE:** {money(rmse)}")
-    st.write(f"**MAPE:** {'N/A' if np.isnan(mape) else f'{one_decimal(mape)}%'}")
-    if not np.isnan(mape):
-        if mape <= thr_exc:
-            st.success(f"Excelente (MAPE ≤ {thr_exc}%).")
-        elif mape <= thr_good:
-            st.info(f"Bueno ({thr_exc}% < MAPE ≤ {thr_good}%).")
-        elif mape <= thr_ok:
-            st.warning(f"Aceptable ({thr_good}% < MAPE ≤ {thr_ok}%).")
-        else:
-            st.error(f"Débil (MAPE > {thr_ok}%).")
+cards_general = [
+    {
+        "label": "Promedio Histórico",
+        "value": money(avg_hist),
+        "foot": "Promedio del monto pagado en el histórico.",
+    },
+    {
+        "label": "Forecast Promedio",
+        "value": money(avg_fc),
+        "foot": "Valor medio proyectado en el horizonte seleccionado.",
+    },
+    {
+        "label": "Variación % Forecast vs Promedio",
+        "value": f"{one_decimal(var_pct)}%",
+        "foot": "Positivo: forecast por encima del histórico.",
+    },
+    {
+        "label": "MAE",
+        "value": money(mae),
+        "foot": "<span class='forecast-foot-note'>Error absoluto medio (histórico).</span>",
+        "foot_is_html": True,
+    },
+    {
+        "label": "RMSE",
+        "value": money(rmse),
+        "foot": "<span class='forecast-foot-note'>Raíz del error cuadrático medio.</span>",
+        "foot_is_html": True,
+    },
+    _mape_card(mape, thr_exc, thr_good, thr_ok),
+]
+_render_metric_cards(cards_general)
 
-with s2:
-    fc_display = fc_plot.copy()
-    fc_display["fecha_g"] = pd.to_datetime(fc_display["fecha_g"])
-    fc_display["Período"] = fc_display["fecha_g"].dt.strftime(tick_format)
-    fc_display["Valor Estimado"] = fc_display["forecast"].map(money)
-    if (ci_low_plot is not None) and (ci_high_plot is not None):
-        fc_display["IC Bajo"] = pd.Series(ci_low_plot).map(money)
-        fc_display["IC Alto"] = pd.Series(ci_high_plot).map(money)
-        cols = ["Período", "Valor Estimado", "IC Bajo", "IC Alto"]
-    else:
-        cols = ["Período", "Valor Estimado"]
-    st.dataframe(fc_display[cols], use_container_width=True)
-    exp = fc_display[cols].copy().rename(
-        columns={"Valor Estimado": "Valor_Estimado", "IC Bajo": "IC_Bajo", "IC Alto": "IC_Alto"}
-    )
-    _excel_download(exp, "Forecast_General", "forecast_general.xlsx")
+fc_display = fc_plot.copy()
+fc_display["fecha_g"] = pd.to_datetime(fc_display["fecha_g"])
+fc_display["Período"] = fc_display["fecha_g"].dt.strftime(tick_format)
+display_general = fc_display[["Período", "forecast"]].rename(columns={"forecast": "Valor Estimado"})
+if (ci_low_plot is not None) and (ci_high_plot is not None):
+    display_general["IC Bajo"] = ci_low_plot
+    display_general["IC Alto"] = ci_high_plot
+cols = display_general.columns.tolist()
+
+display_general_fmt = display_general.copy()
+for col in cols[1:]:
+    display_general_fmt[col] = display_general_fmt[col].map(money)
+
+st.markdown("#### Horizonte proyectado (General)")
+styled_general = _forecast_table_style(display_general_fmt[cols])
+style_table(styled_general)
+export_general = display_general.rename(columns={"Valor Estimado": "Valor_Estimado"})
+if "IC Bajo" in export_general.columns:
+    export_general = export_general.rename(columns={"IC Bajo": "IC_Bajo", "IC Alto": "IC_Alto"})
+_excel_download(export_general, "Forecast_General", "forecast_general.xlsx")
 
 with st.expander("¿Cómo leer este bloque? (General)"):
     _metrics_explainer_block("General", thr_exc, thr_good, thr_ok)
@@ -453,42 +576,59 @@ else:
 
     with col_tab:
         tb = pd.DataFrame({
-            "fecha_g": future_idx_ce, "forecast": yhat_out_ce,
-            "IC Bajo": ci_low_ce, "IC Alto": ci_high_ce
+            "Período": pd.to_datetime(future_idx_ce).strftime(
+                "%b %Y" if gran == "Mes" else ("Sem %W, %Y" if gran == "Semana" else "%d-%m-%Y")
+            ),
+            "Valor Estimado": yhat_out_ce,
+            "IC Bajo": ci_low_ce,
+            "IC Alto": ci_high_ce,
         })
-        tb["Período"] = pd.to_datetime(tb["fecha_g"]).dt.strftime(
-            "%b %Y" if gran == "Mes" else ("Sem %W, %Y" if gran == "Semana" else "%d-%m-%Y")
-        )
-        tb["Valor Estimado"] = tb["forecast"].map(money)
-        tb["IC Bajo"] = tb["IC Bajo"].map(money)
-        tb["IC Alto"] = tb["IC Alto"].map(money)
-        st.dataframe(tb[["Período", "Valor Estimado", "IC Bajo", "IC Alto"]], use_container_width=True)
-        export_ce = tb[["Período", "Valor Estimado", "IC Bajo", "IC Alto"]].rename(
+        tb_display = tb.copy()
+        for col in ["Valor Estimado", "IC Bajo", "IC Alto"]:
+            tb_display[col] = tb_display[col].map(money)
+        style_table(_forecast_table_style(tb_display))
+        export_ce = tb.rename(
             columns={"Valor Estimado": "Valor_Estimado", "IC Bajo": "IC_Bajo", "IC Alto": "IC_Alto"}
         )
         _excel_download(export_ce, "Forecast_CE", "forecast_cuentas_especiales.xlsx")
 
-    st.markdown("**Resumen Numérico — Cuentas Especiales**")
+    st.markdown("#### Resumen Numérico — Cuentas Especiales")
     avg_hist_ce = float(ts_ce.mean())
     avg_fc_ce = float(np.mean(yhat_out_ce))
     var_pct_ce = ((avg_fc_ce - avg_hist_ce) / avg_hist_ce) * 100 if avg_hist_ce > 0 else 0.0
     mae_ce, rmse_ce, mape_ce = _metrics(ts_ce.values, np.nan_to_num(yhat_in_ce, nan=ts_ce.values))
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Promedio Histórico", money(avg_hist_ce))
-    c2.metric("Var % vs Prom.", f"{one_decimal(var_pct_ce)}%")
-    c3.metric("MAE", money(mae_ce))
-    c4.metric("RMSE", money(rmse_ce))
-    st.caption(f"MAPE: {'N/A' if np.isnan(mape_ce) else f'{one_decimal(mape_ce)}%'}")
-    if not np.isnan(mape_ce):
-        if mape_ce <= thr_exc:
-            st.success(f"Excelente (MAPE ≤ {thr_exc}%).")
-        elif mape_ce <= thr_good:
-            st.info(f"Bueno ({thr_exc}% < MAPE ≤ {thr_good}%).")
-        elif mape_ce <= thr_ok:
-            st.warning(f"Aceptable ({thr_good}% < MAPE ≤ {thr_ok}%).")
-        else:
-            st.error(f"Débil (MAPE > {thr_ok}%).")
+    cards_ce = [
+        {
+            "label": "Promedio Histórico",
+            "value": money(avg_hist_ce),
+            "foot": "Nivel medio pagado en el histórico CE.",
+        },
+        {
+            "label": "Forecast Promedio",
+            "value": money(avg_fc_ce),
+            "foot": "Proyección media para Cuentas Especiales.",
+        },
+        {
+            "label": "Variación % vs Prom.",
+            "value": f"{one_decimal(var_pct_ce)}%",
+            "foot": "Impacto porcentual frente al histórico.",
+        },
+        {
+            "label": "MAE",
+            "value": money(mae_ce),
+            "foot": "<span class='forecast-foot-note'>Error absoluto medio (histórico).</span>",
+            "foot_is_html": True,
+        },
+        {
+            "label": "RMSE",
+            "value": money(rmse_ce),
+            "foot": "<span class='forecast-foot-note'>Penaliza errores grandes.</span>",
+            "foot_is_html": True,
+        },
+        _mape_card(mape_ce, thr_exc, thr_good, thr_ok),
+    ]
+    _render_metric_cards(cards_ce)
 
     with st.expander("¿Cómo leer este bloque? (Cuentas Especiales)"):
         _metrics_explainer_block("Cuentas Especiales", thr_exc, thr_good, thr_ok)
@@ -570,42 +710,59 @@ else:
 
     with col_tab:
         tb = pd.DataFrame({
-            "fecha_g": future_idx_ne, "forecast": yhat_out_ne,
-            "IC Bajo": ci_low_ne, "IC Alto": ci_high_ne
+            "Período": pd.to_datetime(future_idx_ne).strftime(
+                "%b %Y" if gran == "Mes" else ("Sem %W, %Y" if gran == "Semana" else "%d-%m-%Y")
+            ),
+            "Valor Estimado": yhat_out_ne,
+            "IC Bajo": ci_low_ne,
+            "IC Alto": ci_high_ne,
         })
-        tb["Período"] = pd.to_datetime(tb["fecha_g"]).dt.strftime(
-            "%b %Y" if gran == "Mes" else ("Sem %W, %Y" if gran == "Semana" else "%d-%m-%Y")
-        )
-        tb["Valor Estimado"] = tb["forecast"].map(money)
-        tb["IC Bajo"] = tb["IC Bajo"].map(money)
-        tb["IC Alto"] = tb["IC Alto"].map(money)
-        st.dataframe(tb[["Período", "Valor Estimado", "IC Bajo", "IC Alto"]], use_container_width=True)
-        export_ne = tb[["Período", "Valor Estimado", "IC Bajo", "IC Alto"]].rename(
+        tb_display = tb.copy()
+        for col in ["Valor Estimado", "IC Bajo", "IC Alto"]:
+            tb_display[col] = tb_display[col].map(money)
+        style_table(_forecast_table_style(tb_display))
+        export_ne = tb.rename(
             columns={"Valor Estimado": "Valor_Estimado", "IC Bajo": "IC_Bajo", "IC Alto": "IC_Alto"}
         )
         _excel_download(export_ne, "Forecast_NoCE", "forecast_cuentas_no_especiales.xlsx")
 
-    st.markdown("**Resumen Numérico — Cuentas No Especiales**")
+    st.markdown("#### Resumen Numérico — Cuentas No Especiales")
     avg_hist_ne = float(ts_ne.mean())
     avg_fc_ne = float(np.mean(yhat_out_ne))
     var_pct_ne = ((avg_fc_ne - avg_hist_ne) / avg_hist_ne) * 100 if avg_hist_ne > 0 else 0.0
     mae_ne, rmse_ne, mape_ne = _metrics(ts_ne.values, np.nan_to_num(yhat_in_ne, nan=ts_ne.values))
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Promedio Histórico", money(avg_hist_ne))
-    c2.metric("Var % vs Prom.", f"{one_decimal(var_pct_ne)}%")
-    c3.metric("MAE", money(mae_ne))
-    c4.metric("RMSE", money(rmse_ne))
-    st.caption(f"MAPE: {'N/A' if np.isnan(mape_ne) else f'{one_decimal(mape_ne)}%'}")
-    if not np.isnan(mape_ne):
-        if mape_ne <= thr_exc:
-            st.success(f"Excelente (MAPE ≤ {thr_exc}%).")
-        elif mape_ne <= thr_good:
-            st.info(f"Bueno ({thr_exc}% < MAPE ≤ {thr_good}%).")
-        elif mape_ne <= thr_ok:
-            st.warning(f"Aceptable ({thr_good}% < MAPE ≤ {thr_ok}%).")
-        else:
-            st.error(f"Débil (MAPE > {thr_ok}%).")
+    cards_ne = [
+        {
+            "label": "Promedio Histórico",
+            "value": money(avg_hist_ne),
+            "foot": "Nivel medio pagado en el histórico No CE.",
+        },
+        {
+            "label": "Forecast Promedio",
+            "value": money(avg_fc_ne),
+            "foot": "Proyección media para cuentas No Especiales.",
+        },
+        {
+            "label": "Variación % vs Prom.",
+            "value": f"{one_decimal(var_pct_ne)}%",
+            "foot": "Impacto porcentual frente al histórico.",
+        },
+        {
+            "label": "MAE",
+            "value": money(mae_ne),
+            "foot": "<span class='forecast-foot-note'>Error absoluto medio (histórico).</span>",
+            "foot_is_html": True,
+        },
+        {
+            "label": "RMSE",
+            "value": money(rmse_ne),
+            "foot": "<span class='forecast-foot-note'>Raíz del error cuadrático medio.</span>",
+            "foot_is_html": True,
+        },
+        _mape_card(mape_ne, thr_exc, thr_good, thr_ok),
+    ]
+    _render_metric_cards(cards_ne)
 
     with st.expander("¿Cómo leer este bloque? (Cuentas No Especiales)"):
         _metrics_explainer_block("Cuentas No Especiales", thr_exc, thr_good, thr_ok)
