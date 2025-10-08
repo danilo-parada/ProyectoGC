@@ -10,7 +10,8 @@ from datetime import datetime, date
 
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
-    advanced_filters_ui, apply_advanced_filters, money, one_decimal, header_ui
+    advanced_filters_ui, apply_advanced_filters, money, one_decimal, header_ui,
+    style_table,
 )
 from lib_metrics import ensure_derived_fields, compute_kpis
 from lib_report import excel_bytes_single, generate_pdf_report
@@ -22,6 +23,62 @@ header_ui(
     current_page="Informe Asesor",
     subtitle="KPIs, deuda y priorización con foco en cuentas especiales y proveedores prioritarios"
 )
+
+# -------------------- Estilos locales para tablas --------------------
+TABLE_HEADER_BG = "#003399"
+TABLE_HEADER_FG = "#FFFFFF"
+TABLE_STRIPED_BG = "#f5f7ff"
+TABLE_HOVER_BG = "#e8edff"
+TABLE_FONT_SIZE = "15px"
+
+
+def _table_style(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
+    """Aplica el estilo de tablas usado en Rankings para tablas estáticas."""
+
+    if isinstance(df_disp, pd.DataFrame):
+        sty = df_disp.style
+    else:
+        sty = df_disp
+
+    sty = sty.hide(axis="index")
+    sty = sty.set_table_styles([
+        {"selector": "thead tr", "props": [
+            ("background-color", TABLE_HEADER_BG),
+            ("color", TABLE_HEADER_FG),
+            ("font-weight", "bold"),
+            ("font-size", TABLE_FONT_SIZE),
+            ("text-align", "center"),
+            ("border-radius", "12px 12px 0 0")
+        ]},
+        {"selector": "th", "props": [
+            ("background-color", "transparent"),
+            ("color", TABLE_HEADER_FG),
+            ("font-weight", "600"),
+            ("font-size", TABLE_FONT_SIZE),
+            ("text-transform", "uppercase"),
+            ("letter-spacing", "0.4px"),
+            ("padding", "12px 18px"),
+            ("text-align", "center")
+        ]},
+        {"selector": "tbody td", "props": [
+            ("font-size", TABLE_FONT_SIZE),
+            ("padding", "12px 18px"),
+            ("text-align", "right"),
+            ("border-bottom", "1px solid #e0e6ff")
+        ]},
+        {"selector": "tbody tr:nth-child(even)", "props": [
+            ("background-color", TABLE_STRIPED_BG)
+        ]},
+        {"selector": "tbody tr:hover", "props": [
+            ("background-color", TABLE_HOVER_BG)
+        ]},
+        {"selector": "tbody td:first-child", "props": [
+            ("text-align", "left"),
+            ("font-weight", "600"),
+            ("color", "#1f2a55")
+        ]},
+    ], overwrite=False)
+    return sty
 
 # -------------------- Carga de base --------------------
 df0 = get_df_norm()
@@ -252,13 +309,14 @@ def build_top_proveedores(df_in: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
 if not df_pag.empty:
     top_n = st.slider("Top N", 3, 20, 5, 1)
     rankings_df = build_top_proveedores(df_pag, top_n=top_n)
-    st.table(rankings_df.assign(
+    rankings_display = rankings_df.assign(
         **{
             "Monto Contabilizado": rankings_df["Monto Contabilizado"].map(money),
             "Monto Pagado": rankings_df["Monto Pagado"].map(money),
             "Días Promedio Pago": rankings_df["Días Promedio Pago"].map(one_decimal),
         }
-    ))
+    )
+    style_table(_table_style(rankings_display))
     st.download_button(
         "⬇️ Descargar Ranking",
         data=excel_bytes_single(rankings_df, "RankingProveedores"),
@@ -371,8 +429,9 @@ if not df_nopag_loc.empty and "fecha_venc_30" in df_nopag_loc:
         flujo["Flujo_Acumulado"] = flujo["Monto_a_Pagar"].cumsum()
         st.markdown("**Proyección Próximos 3 días**")
         small = flujo.head(3).rename(columns={"Fecha":"Día","Monto_a_Pagar":"Monto a Pagar","Cant_Facturas":"Cant. Facturas"})
-        small["Monto a Pagar"] = small["Monto a Pagar"].map(money)
-        st.table(small)
+        small_display = small.copy()
+        small_display["Monto a Pagar"] = small_display["Monto a Pagar"].map(money)
+        style_table(_table_style(small_display))
         fig = go.Figure()
         fig.add_bar(x=flujo["Fecha"], y=flujo["Monto_a_Pagar"], name="Monto Diario")
         fig.add_scatter(x=flujo["Fecha"], y=flujo["Cant_Facturas"], name="Cant. Facturas", yaxis="y2")
