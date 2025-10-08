@@ -47,10 +47,11 @@ def _stat_pill(label: str, value: str) -> str:
     )
 
 
-def _segment_card(title: str, primary: str, stats: list[tuple[str, str]]) -> str:
+def _segment_card(title: str, primary: str, stats: list[tuple[str, str]], *, tooltip: str | None = None) -> str:
     pills = "".join(_stat_pill(name, val) for name, val in stats)
+    tooltip_attr = f' title="{html.escape(tooltip)}"' if tooltip else ""
     return (
-        '<div class="app-card">'
+        f'<div class="app-card"{tooltip_attr}>'
         f'<div class="app-card__title">{title}</div>'
         f'<div class="app-card__value">{primary}</div>'
         f'<div class="app-inline-stats">{pills}</div>'
@@ -156,8 +157,13 @@ df_filtered_common = df_common_no_estado.copy()
 df = df_common_no_estado
 
 # Particiones útiles
-df_pag     = df[df["estado_pago"] == "pagada"].copy()
-df_no_pag  = df[df["estado_pago"] != "pagada"].copy()
+pagadas_mask_global = df.get("is_pagada") if "is_pagada" in df.columns else None
+if pagadas_mask_global is not None:
+    df_pag = df[pagadas_mask_global].copy()
+    df_no_pag = df[~pagadas_mask_global].copy()
+else:
+    df_pag = df[df["estado_pago"] == "pagada"].copy()
+    df_no_pag = df[df["estado_pago"] != "pagada"].copy()
 
 # ===================== KPIs principales =====================
 st.subheader("Metricas principales del periodo")
@@ -165,7 +171,8 @@ st.subheader("Metricas principales del periodo")
 kpi = compute_kpis(df_filtered_common)
 
 # ===== Base de pagos contabilizados (para DPP/DIC/DCP y promedios globales) =====
-df_pag_contab = df[(df["estado_pago"] == "pagada") &
+pagadas_mask_full = pagadas_mask_global if pagadas_mask_global is not None else df["estado_pago"].eq("pagada")
+df_pag_contab = df[pagadas_mask_full &
                    (pd.to_datetime(df.get("fecha_cc"), errors="coerce").notna())].copy()
 
 mean_dso_kpi = kpi["dpp"]
@@ -177,17 +184,20 @@ def _fmt_days_metric(value: float) -> str:
 
 
 metric_cards = [
-    _metric_card(
-        "Monto total facturado",
+    _segment_card(
+        "Facturado: Pagado vs Sin pagar",
         money(kpi["total_facturado"]),
-        caption=f"Base: {int(kpi['docs_total']):,} doc.",
-        tooltip=TOOLTIPS["total_facturado"],
+        [
+            ("Pagado", money(kpi["facturado_pagado"])),
+            ("Sin pagar", money(kpi["facturado_sin_pagar"])),
+        ],
+        tooltip=TOOLTIPS["desglose_facturado"],
     ),
     _metric_card(
-        "Total pagado",
-        money(kpi["total_pagado"]),
+        "Total pagado (real)",
+        money(kpi["total_pagado_real"]),
         caption=f"Pagadas: {int(kpi['docs_pagados']):,}",
-        tooltip=TOOLTIPS["total_pagado"],
+        tooltip=TOOLTIPS["total_pagado_real"],
     ),
     _metric_card(
         LABELS["dpp_emision_pago"],
@@ -222,7 +232,7 @@ if "cuenta_especial" in df_filtered_common.columns:
 
         stats = [
             ("Documentos", f"{int(k['docs_total']):,}"),
-            ("Total pagado", money(k["total_pagado"])),
+            ("Total pagado (real)", money(k["total_pagado_real"])),
             (LABELS["dpp_emision_pago"], _fmt_days_metric(k["dpp"])),
             (LABELS["dic_emision_contab"], _fmt_days_metric(k["dic"])),
             (LABELS["dcp_contab_pago"], _fmt_days_metric(k["dcp"])),

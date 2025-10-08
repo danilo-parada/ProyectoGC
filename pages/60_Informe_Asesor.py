@@ -194,9 +194,19 @@ df_filtered_common = df_common_no_estado.copy()
 
 df = df_common_no_estado
 
-df_pag = df_filtered_common[df_filtered_common["estado_pago"] == "pagada"].copy()
+pagadas_mask_global = (
+    df_filtered_common.get("is_pagada") if "is_pagada" in df_filtered_common.columns else None
+)
+if pagadas_mask_global is not None:
+    df_pag = df_filtered_common[pagadas_mask_global].copy()
+else:
+    df_pag = df_filtered_common[df_filtered_common["estado_pago"] == "pagada"].copy()
 
-df_nopag_all = df[df["estado_pago"] != "pagada"].copy()
+pagadas_mask_full = df.get("is_pagada") if "is_pagada" in df.columns else None
+if pagadas_mask_full is not None:
+    df_nopag_all = df[~pagadas_mask_full].copy()
+else:
+    df_nopag_all = df[df["estado_pago"] != "pagada"].copy()
 
 TODAY = pd.Timestamp(date.today()).normalize()
 
@@ -379,11 +389,22 @@ else:
             tooltip=TOOLTIPS["total_facturado"],
         ),
         _card_html(
-            "Total pagado",
-            money(kpi_total["total_pagado"]),
+            "Desglose facturado",
+            money(kpi_total["total_facturado"]),
+            subtitle="Pagado vs sin pagar",
+            stats=[
+                ("Pagado", money(kpi_total["facturado_pagado"])),
+                ("Sin pagar", money(kpi_total["facturado_sin_pagar"])),
+            ],
+            compact=False,
+            tooltip=TOOLTIPS["desglose_facturado"],
+        ),
+        _card_html(
+            "Total pagado (real)",
+            money(kpi_total["total_pagado_real"]),
             subtitle="Facturas con pago registrado",
             tag=f"{total_pagadas:,} pagos",
-            tooltip=TOOLTIPS["total_pagado"],
+            tooltip=TOOLTIPS["total_pagado_real"],
         ),
         _card_html(
             LABELS["dpp_emision_pago"],
@@ -413,7 +434,7 @@ else:
                 continue
             k = compute_kpis(sub)
             stats = [
-                ("Total pagado", money(k["total_pagado"])),
+                ("Total pagado (real)", money(k["total_pagado_real"])),
                 (LABELS["dpp_emision_pago"], _fmt_days(k["dpp"])),
                 (LABELS["dic_emision_contab"], _fmt_days(k["dic"])),
                 (LABELS["dcp_contab_pago"], _fmt_days(k["dcp"])),
@@ -447,7 +468,7 @@ def build_top_proveedores(df_in: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
     d = df_in.copy()
     d["dias_a_pago_calc"] = pd.to_numeric(d.get("dias_a_pago_calc"), errors="coerce")
     d["monto_autorizado"] = pd.to_numeric(d.get("monto_autorizado"), errors="coerce").fillna(0.0)
-    d["monto_pagado"] = pd.to_numeric(d.get("monto_pagado"), errors="coerce").fillna(0.0)
+    d["monto_ce"] = pd.to_numeric(d.get("monto_ce"), errors="coerce").fillna(0.0)
     d["prov_prioritario"] = d.get("prov_prioritario", False).astype(bool)
     d["cuenta_especial"] = d.get("cuenta_especial", False).astype(bool)
 
@@ -455,7 +476,7 @@ def build_top_proveedores(df_in: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
         d.groupby("prr_razon_social", dropna=False)
          .agg(
              **{
-                 "Monto Pagado": ("monto_autorizado", "sum"),
+                 "Monto Pagado": ("monto_ce", "sum"),
                  "Días Promedio Pago": ("dias_a_pago_calc", lambda s: s[s >= 0].mean()),
                  "Cant. Fact. ≤30 días": ("dias_a_pago_calc", lambda s: (s <= 30).sum()),
                  "Cant. Fact. >30 días": ("dias_a_pago_calc", lambda s: (s > 30).sum()),
@@ -932,7 +953,7 @@ if st.button("📄 Generar PDF"):
         secciones={"kpis": True,"rankings": True,"deuda": True,"presupuesto": True},
         kpis={
             "total_facturado": money(kpi_total["total_facturado"]) if not df_filtered_common.empty else "-",
-            "total_pagado":   money(kpi_total["total_pagado"]) if not df_filtered_common.empty else "-",
+            "total_pagado_real":   money(kpi_total["total_pagado_real"]) if not df_filtered_common.empty else "-",
             "dso": "-" if (df_filtered_common.empty or pd.isna(kpi_total["dpp"])) else one_decimal(kpi_total["dpp"]),
         },
         rankings_df=rankings_df if 'rankings_df' in locals() else pd.DataFrame(),
