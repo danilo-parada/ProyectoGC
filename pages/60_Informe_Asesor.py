@@ -633,6 +633,13 @@ def _prioritize_documents(dfin: pd.DataFrame, criterio: str) -> pd.DataFrame:
 
 df_nopag_loc = _apply_local_filters(df_nopag)
 
+
+def _apply_horizon_filter(dfin: pd.DataFrame) -> pd.DataFrame:
+    if "dias_a_vencer" not in dfin:
+        return dfin.copy()
+    dias = pd.to_numeric(dfin["dias_a_vencer"], errors="coerce")
+    return dfin[dias <= horizonte].copy()
+
 # KPIs locales
 vencidos_m, vencidos_c = _agg_block(df_nopag_loc, df_nopag_loc["dias_a_vencer"] < 0) if "dias_a_vencer" in df_nopag_loc else (0.0, 0)
 hoy_m, hoy_c = _agg_block(df_nopag_loc, df_nopag_loc["dias_a_vencer"] == 0) if "dias_a_vencer" in df_nopag_loc else (0.0, 0)
@@ -675,17 +682,13 @@ if not df_nopag_loc.empty and "fecha_venc_30" in df_nopag_loc:
 else:
     st.info("No hay datos de vencimientos para proyectar con los filtros seleccionados.")
 
+candidatas_base = _apply_horizon_filter(df_nopag_loc)
+candidatas_prior = _prioritize_documents(candidatas_base, crit_sel)
+
 # =========================================================
 # 5) Presupuesto del Día (Selección Automática)
 # =========================================================
 st.subheader("5) Presupuesto del Día (Selección Automática)")
-
-base = df_nopag_loc.copy()
-
-candidatas_prior = _prioritize_documents(df_nopag, "Riesgo de aprobación")
-
-if "dias_a_vencer" in base.columns:
-    base = base[pd.to_numeric(base["dias_a_vencer"], errors="coerce") <= horizonte]
 
 base_keep = [
     "Nivel","prov_prioritario","cuenta_especial","fac_numero","cmp_nombre","prr_razon_social",
@@ -737,10 +740,10 @@ def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
 
 seleccion = pd.DataFrame()
 
-if base.empty or "importe_deuda" not in base:
+if candidatas_base.empty or "importe_deuda" not in candidatas_base:
     st.info("No hay documentos pendientes para priorizar con los filtros locales.")
 else:
-    prior = _prioritize_documents(base, crit_sel)
+    prior = candidatas_prior
 
     # Monto por defecto = suma de críticos (<= 0 días)
     total_criticos = float(prior.loc[prior["dias_a_vencer"] <= 0, "importe_regla"].sum())
