@@ -107,7 +107,23 @@ def read_any(file)->pd.DataFrame:
     else:
         raise ValueError(f"Formato de archivo no soportado: {name}")
 
-def style_table(df: pd.DataFrame | Styler, use_container_width=True, height=420):
+def style_table(
+    df: pd.DataFrame | Styler,
+    use_container_width: bool = True,
+    height: int = 420,
+    *,
+    visible_rows: int | None = None,
+):
+    """Renderiza una tabla con estilo consistente.
+
+    Cuando se recibe un ``Styler`` se utiliza la versión HTML con estilos
+    personalizados. En ese caso ``visible_rows`` permite fijar una altura
+    máxima equivalente al número de filas visibles antes de que aparezca una
+    barra de desplazamiento vertical.
+    """
+    header_height = 64
+    row_height = 52
+
     if isinstance(df, Styler):
         st.markdown(
             """
@@ -130,15 +146,21 @@ def style_table(df: pd.DataFrame | Styler, use_container_width=True, height=420)
             """,
             unsafe_allow_html=True,
         )
+        extra_style = ""
+        if visible_rows is not None and visible_rows > 0:
+            max_height = header_height + visible_rows * row_height
+            extra_style = f"max-height:{max_height}px; overflow-y:auto;"
         st.markdown(
             f"""
-            <div class="styled-table-wrapper">
+            <div class="styled-table-wrapper" style="{extra_style}">
                 {df.to_html()}
             </div>
             """,
             unsafe_allow_html=True,
         )
     else:
+        if visible_rows is not None and visible_rows > 0:
+            height = header_height + visible_rows * row_height
         st.dataframe(df, use_container_width=use_container_width, height=height)
 
 # ============================================================

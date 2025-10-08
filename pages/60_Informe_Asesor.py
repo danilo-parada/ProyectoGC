@@ -25,11 +25,12 @@ header_ui(
 )
 
 # -------------------- Estilos locales para tablas --------------------
-TABLE_HEADER_BG = "#003399"
+TABLE_HEADER_BG = "#002b6f"
 TABLE_HEADER_FG = "#FFFFFF"
-TABLE_STRIPED_BG = "#f5f7ff"
-TABLE_HOVER_BG = "#e8edff"
-TABLE_FONT_SIZE = "15px"
+TABLE_STRIPED_BG = "#f2f5ff"
+TABLE_HOVER_BG = "#e0e8ff"
+TABLE_FONT_SIZE = "16px"
+TABLE_ROW_PADDING = "16px 22px"
 
 
 def _table_style(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
@@ -56,15 +57,15 @@ def _table_style(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
             ("font-weight", "600"),
             ("font-size", TABLE_FONT_SIZE),
             ("text-transform", "uppercase"),
-            ("letter-spacing", "0.4px"),
-            ("padding", "12px 18px"),
-            ("text-align", "center")
+            ("letter-spacing", "0.6px"),
+            ("padding", TABLE_ROW_PADDING),
+            ("text-align", "center"),
         ]},
         {"selector": "tbody td", "props": [
             ("font-size", TABLE_FONT_SIZE),
-            ("padding", "12px 18px"),
+            ("padding", TABLE_ROW_PADDING),
             ("text-align", "right"),
-            ("border-bottom", "1px solid #e0e6ff")
+            ("border-bottom", "1px solid #d9e1ff"),
         ]},
         {"selector": "tbody tr:nth-child(even)", "props": [
             ("background-color", TABLE_STRIPED_BG)
@@ -543,30 +544,40 @@ else:
             out["Monto"] = pd.to_numeric(out["Monto"], errors="coerce").fillna(0.0)
         return out
 
-    st.markdown("**Candidatas a Pago (según criterio elegido)**")
-    candidatas_display = _prep_show(prior)
-    style_table(_table_style(candidatas_display))
-    st.download_button(
-        "⬇️ Descargar Candidatas",
-        data=excel_bytes_single(_prep_export(prior), "Candidatas"),
-        file_name="candidatas_pago.xlsx", disabled=prior.empty
-    )
+    tab_candidatas, tab_seleccion = st.tabs([
+        "Candidatas a Pago",
+        "Selección a Pagar Hoy",
+    ])
 
-    st.markdown(
-        """
-        <div class="app-note">
-            <strong>Seleccion a pagar hoy</strong> -- bloque critico de pagos.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    candidatas_display = _prep_show(prior)
     seleccion_display = _prep_show(seleccion)
-    style_table(_table_style(seleccion_display))
-    st.download_button(
-        "⬇️ Descargar Selección de Hoy",
-        data=excel_bytes_single(_prep_export(seleccion), "PagoHoy"),
-        file_name="pago_hoy.xlsx", disabled=seleccion.empty
-    )
+
+    with tab_candidatas:
+        st.markdown("**Candidatas a Pago (según criterio elegido)**")
+        style_table(_table_style(candidatas_display), visible_rows=15)
+        st.download_button(
+            "⬇️ Descargar Candidatas",
+            data=excel_bytes_single(_prep_export(prior), "Candidatas"),
+            file_name="candidatas_pago.xlsx",
+            disabled=prior.empty,
+        )
+
+    with tab_seleccion:
+        st.markdown(
+            """
+            <div class="app-note">
+                <strong>Selección a pagar hoy</strong> — bloque crítico de pagos.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        style_table(_table_style(seleccion_display), visible_rows=15)
+        st.download_button(
+            "⬇️ Descargar Selección de Hoy",
+            data=excel_bytes_single(_prep_export(seleccion), "PagoHoy"),
+            file_name="pago_hoy.xlsx",
+            disabled=seleccion.empty,
+        )
 
     # Controles numericos
     suma_sel = float(pd.to_numeric(seleccion.get("importe_regla", pd.Series(dtype=float)), errors="coerce").fillna(0.0).sum())
