@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import html
+from typing import List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -13,7 +15,12 @@ from lib_common import (
     advanced_filters_ui, money, one_decimal, header_ui,
     ESTADO_LABEL, sanitize_df, safe_markdown
 )
-from lib_metrics import ensure_derived_fields, compute_kpis, apply_common_filters, compute_dic_split
+from lib_metrics import (
+    ensure_derived_fields,
+    compute_kpis,
+    apply_common_filters,
+    compute_monto_pagado_real,
+)
 from lib_report import excel_bytes_multi
 
 BLUE = "#1f77b4"   # pagadas
@@ -24,9 +31,9 @@ GRN  = "#2ecc71"
 def _metric_card(
     title: str,
     value: str,
-    caption: str | None = None,
+    caption: Optional[str] = None,
     *,
-    tooltip: str | None = None,
+    tooltip: Optional[str] = None,
 ) -> str:
     extra = f'<p class="app-card__subtitle">{caption}</p>' if caption else ""
     tooltip_attr = f' title="{html.escape(tooltip)}"' if tooltip else ""
@@ -47,7 +54,13 @@ def _stat_pill(label: str, value: str) -> str:
     )
 
 
-def _segment_card(title: str, primary: str, stats: list[tuple[str, str]], *, tooltip: str | None = None) -> str:
+def _segment_card(
+    title: str,
+    primary: str,
+    stats: List[Tuple[str, str]],
+    *,
+    tooltip: Optional[str] = None,
+) -> str:
     pills = "".join(_stat_pill(name, val) for name, val in stats)
     tooltip_attr = f' title="{html.escape(tooltip)}"' if tooltip else ""
     return (
@@ -75,7 +88,7 @@ def _render_range_cards(items: list[tuple[str, str]]):
     safe_markdown('<div class="app-range-card-grid">' + cards_html + '</div>')
 
 
-def _render_percentile_cards(items: list[tuple[str, str, str | None]]):
+def _render_percentile_cards(items: List[Tuple[str, str, Optional[str]]]):
     if not items:
         return
     cards = []
@@ -152,18 +165,21 @@ common_filters = {
 }
 
 df_common_no_estado = apply_common_filters(df0, common_filters).copy()
+df_common_no_estado["monto_pagado_real"] = compute_monto_pagado_real(df_common_no_estado)
 df_filtered_common = df_common_no_estado.copy()
 
 df = df_common_no_estado
 
 # Particiones útiles
-pagadas_mask_global = df.get("is_pagada") if "is_pagada" in df.columns else None
-if pagadas_mask_global is not None:
-    df_pag = df[pagadas_mask_global].copy()
-    df_no_pag = df[~pagadas_mask_global].copy()
+pagadas_series = df.get("monto_pagado_real")
+if pagadas_series is None:
+    pagadas_series = pd.Series(0.0, index=df.index)
 else:
-    df_pag = df[df["estado_pago"] == "pagada"].copy()
-    df_no_pag = df[df["estado_pago"] != "pagada"].copy()
+    pagadas_series = pd.to_numeric(pagadas_series, errors="coerce").fillna(0.0)
+
+pagadas_mask_bool = pagadas_series > 0
+df_pag = df[pagadas_mask_bool].copy()
+df_no_pag = df[~pagadas_mask_bool].copy()
 
 # ===================== KPIs principales =====================
 st.subheader("Metricas principales del periodo")
@@ -172,7 +188,8 @@ kpi = compute_kpis(df_filtered_common)
 dic_split = compute_dic_split(df_filtered_common)
 
 # ===== Base de pagos contabilizados (para DPP/DIC/DCP y promedios globales) =====
-pagadas_mask_full = pagadas_mask_global if pagadas_mask_global is not None else df["estado_pago"].eq("pagada")
+pagadas_mask_full = pd.to_numeric(df.get("monto_pagado_real"), errors="coerce") if "monto_pagado_real" in df else pd.Series(0.0, index=df.index)
+pagadas_mask_full = pagadas_mask_full.fillna(0.0) > 0
 df_pag_contab = df[pagadas_mask_full &
                    (pd.to_datetime(df.get("fecha_cc"), errors="coerce").notna())].copy()
 
@@ -212,6 +229,14 @@ metric_cards = [
             ("Sin pagar", money(kpi["facturado_sin_pagar"])),
         ],
         tooltip=TOOLTIPS["desglose_facturado"],
+    ),
+    _metric_card(
+        "Facturado pagado",
+        money(kpi["facturado_pagado"]),
+    ),
+    _metric_card(
+        "Facturado sin pagar",
+        money(kpi["facturado_sin_pagar"]),
     ),
     _metric_card(
         "Total pagado (real)",

@@ -1,12 +1,15 @@
 # pages/60_Informe_Asesor.py
 from __future__ import annotations
 
+from datetime import datetime, date
+from typing import List, Optional, Tuple, Union
+
 import html
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from datetime import datetime, date
+from pandas.io.formats.style import Styler
 
 from core.utils import LABELS, TOOLTIPS
 from lib_common import (
@@ -14,7 +17,12 @@ from lib_common import (
     advanced_filters_ui, money, one_decimal, header_ui,
     style_table, sanitize_df, safe_markdown,
 )
-from lib_metrics import ensure_derived_fields, compute_kpis, apply_common_filters, compute_dic_split
+from lib_metrics import (
+    ensure_derived_fields,
+    compute_kpis,
+    apply_common_filters,
+    compute_monto_pagado_real,
+)
 from lib_report import excel_bytes_single, generate_pdf_report
 
 # -------------------- Config & Header --------------------
@@ -112,7 +120,7 @@ _BUDGET_PANEL_STYLE = """
 """
 
 
-def _table_style(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
+def _table_style(df_disp: Union[pd.DataFrame, Styler]):
     """Aplica el estilo de tablas usado en Rankings para tablas estáticas."""
 
     if isinstance(df_disp, pd.DataFrame):
@@ -168,6 +176,7 @@ if df0 is None:
     st.stop()
 
 df0 = ensure_derived_fields(df0)
+df0["monto_pagado_real"] = compute_monto_pagado_real(df0)
 
 # -------------------- Filtros globales --------------------
 fac_ini, fac_fin, pay_ini, pay_fin = general_date_filters_ui(df0)
@@ -190,23 +199,18 @@ common_filters = {
 }
 
 df_common_no_estado = apply_common_filters(df0, common_filters).copy()
+df_common_no_estado["monto_pagado_real"] = compute_monto_pagado_real(df_common_no_estado)
 df_filtered_common = df_common_no_estado.copy()
 
 df = df_common_no_estado
 
-pagadas_mask_global = (
-    df_filtered_common.get("is_pagada") if "is_pagada" in df_filtered_common.columns else None
-)
-if pagadas_mask_global is not None:
-    df_pag = df_filtered_common[pagadas_mask_global].copy()
-else:
-    df_pag = df_filtered_common[df_filtered_common["estado_pago"] == "pagada"].copy()
+pagadas_series_global = pd.to_numeric(df_filtered_common.get("monto_pagado_real"), errors="coerce") if "monto_pagado_real" in df_filtered_common else pd.Series(0.0, index=df_filtered_common.index)
+pagadas_series_global = pagadas_series_global.fillna(0.0)
+df_pag = df_filtered_common[pagadas_series_global > 0].copy()
 
-pagadas_mask_full = df.get("is_pagada") if "is_pagada" in df.columns else None
-if pagadas_mask_full is not None:
-    df_nopag_all = df[~pagadas_mask_full].copy()
-else:
-    df_nopag_all = df[df["estado_pago"] != "pagada"].copy()
+pagadas_series_full = pd.to_numeric(df.get("monto_pagado_real"), errors="coerce") if "monto_pagado_real" in df else pd.Series(0.0, index=df.index)
+pagadas_series_full = pagadas_series_full.fillna(0.0)
+df_nopag_all = df[pagadas_series_full <= 0].copy()
 
 TODAY = pd.Timestamp(date.today()).normalize()
 
@@ -243,7 +247,7 @@ def _agg_block(d: pd.DataFrame, mask):
 
 def _compute_presupuesto_selection(
     prior: pd.DataFrame, presupuesto: float
-) -> tuple[pd.DataFrame, float, float, dict | None]:
+) -> Tuple[pd.DataFrame, float, float, Optional[dict]]:
     """Devuelve selección acumulada, suma, saldo restante y próxima factura."""
 
     if prior is None or prior.empty:
@@ -287,14 +291,14 @@ def _compute_presupuesto_selection(
 def _card_html(
     title: str,
     value: str,
-    subtitle: str | None = None,
+    subtitle: Optional[str] = None,
     *,
-    tag: str | None = None,
+    tag: Optional[str] = None,
     tag_variant: str = "success",
     tone: str = "default",
-    stats: list[tuple[str, str]] | None = None,
+    stats: Optional[List[Tuple[str, str]]] = None,
     compact: bool = True,
-    tooltip: str | None = None,
+    tooltip: Optional[str] = None,
 ) -> str:
     classes = ["app-card", "app-card--frost"]
     if compact:
@@ -416,6 +420,14 @@ else:
             tooltip=TOOLTIPS["desglose_facturado"],
         ),
         _card_html(
+            "Facturado pagado",
+            money(kpi_total["facturado_pagado"]),
+        ),
+        _card_html(
+            "Facturado sin pagar",
+            money(kpi_total["facturado_sin_pagar"]),
+        ),
+        _card_html(
             "Total pagado (real)",
             money(kpi_total["total_pagado_real"]),
             subtitle="Facturas con pago registrado",
@@ -488,8 +500,7 @@ def build_top_proveedores(df_in: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
 
     d = df_in.copy()
     d["dias_a_pago_calc"] = pd.to_numeric(d.get("dias_a_pago_calc"), errors="coerce")
-    d["monto_autorizado"] = pd.to_numeric(d.get("monto_autorizado"), errors="coerce").fillna(0.0)
-    d["monto_ce"] = pd.to_numeric(d.get("monto_ce"), errors="coerce").fillna(0.0)
+    d["monto_pagado_real"] = pd.to_numeric(d.get("monto_pagado_real"), errors="coerce").fillna(0.0)
     d["prov_prioritario"] = d.get("prov_prioritario", False).astype(bool)
     d["cuenta_especial"] = d.get("cuenta_especial", False).astype(bool)
 
@@ -497,7 +508,7 @@ def build_top_proveedores(df_in: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
         d.groupby("prr_razon_social", dropna=False)
          .agg(
              **{
-                 "Monto Pagado": ("monto_ce", "sum"),
+                 "Monto Pagado": ("monto_pagado_real", "sum"),
                  "Días Promedio Pago": ("dias_a_pago_calc", lambda s: s[s >= 0].mean()),
                  "Cant. Fact. ≤30 días": ("dias_a_pago_calc", lambda s: (s <= 30).sum()),
                  "Cant. Fact. >30 días": ("dias_a_pago_calc", lambda s: (s > 30).sum()),

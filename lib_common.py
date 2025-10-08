@@ -7,7 +7,7 @@ warnings.filterwarnings("ignore")
 
 from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -133,11 +133,11 @@ def read_any(file)->pd.DataFrame:
         raise ValueError(f"Formato de archivo no soportado: {name}")
 
 def style_table(
-    df: pd.DataFrame | Styler,
+    df: Union[pd.DataFrame, Styler],
     use_container_width: bool = True,
     height: int = 420,
     *,
-    visible_rows: int | None = None,
+    visible_rows: Optional[int] = None,
 ):
     """Renderiza una tabla con estilo consistente.
 
@@ -217,7 +217,7 @@ def style_table(
 # 4) Tema visual y cabecera
 # ============================================================
 _THEME_CSS_PATH = Path(__file__).resolve().parent / "styles" / "theme.css"
-_THEME_CSS_CACHE: str | None = None
+_THEME_CSS_CACHE: Optional[str] = None
 
 def load_ui_theme():
     """
@@ -233,7 +233,7 @@ def load_ui_theme():
     if _THEME_CSS_CACHE:
         safe_markdown(f"<style>{_THEME_CSS_CACHE}</style>")
 
-def header_ui(title: str, current_page: str, subtitle: str | None = None):
+def header_ui(title: str, current_page: str, subtitle: Optional[str] = None):
     load_ui_theme()
     safe_title = html.escape(str(title))
     safe_page = html.escape(str(current_page))
@@ -287,7 +287,7 @@ def init_session_keys():
         if k not in ss:
             ss[k] = v
 
-def get_df_norm()->pd.DataFrame|None:
+def get_df_norm() -> Optional[pd.DataFrame]:
     """Devuelve la base normalizada vigente en sesión (deduplicada)."""
     return st.session_state.get("df")
 
@@ -384,7 +384,7 @@ def merge_honorarios_con_bancos(df_honorarios: pd.DataFrame, df_bancos: pd.DataF
     return merged.drop(columns="_merge_key_cc")
 
 
-def load_honorarios(df_hon: pd.DataFrame) -> pd.DataFrame | None:
+def load_honorarios(df_hon: pd.DataFrame) -> Optional[pd.DataFrame]:
     """Normaliza y registra la base de honorarios en sesion."""
     ss = st.session_state
     if df_hon is None or df_hon.empty:
@@ -444,7 +444,7 @@ def load_honorarios(df_hon: pd.DataFrame) -> pd.DataFrame | None:
 
 
 # Helpers honorarios
-def get_honorarios_df() -> pd.DataFrame | None:
+def get_honorarios_df() -> Optional[pd.DataFrame]:
     df = st.session_state.get("honorarios")
     if isinstance(df, pd.DataFrame) and not df.empty:
         return df
@@ -735,7 +735,13 @@ def apply_general_filters(df: pd.DataFrame, fac_ini, fac_fin, pay_ini, pay_fin)-
         out = out[mask_pag]
     return out
 
-def advanced_filters_ui(df: pd.DataFrame, labels: dict|None=None, helps: dict|None=None, show_controls=None, **_):
+def advanced_filters_ui(
+    df: pd.DataFrame,
+    labels: Optional[dict] = None,
+    helps: Optional[dict] = None,
+    show_controls=None,
+    **_,
+):
     """
     Devuelve (sede, org, prov, cc, oc, est, prio)
     (El prio global se maneja localmente en cada página, por eso lo devolvemos vacío)
@@ -802,7 +808,7 @@ def apply_advanced_filters(df: pd.DataFrame, sede, org, prov, cc, oc, est, prio)
     return out
 # ——— Filtro “chip” de Sede (auto-descubre columna sede / sede_pago) ———
 
-def _detect_sede_col(df: pd.DataFrame) -> str | None:
+def _detect_sede_col(df: pd.DataFrame) -> Optional[str]:
     for c in ["sede", "sede_pago", "cmp_nombre"]:
         if c in df.columns:
             return c
@@ -840,7 +846,7 @@ def sede_chip_ui(df: pd.DataFrame, label: str = "Sede", key: str = "sede_chip"):
 
     return None if selected == "Todas" else selected
 
-def apply_sede_chip(df: pd.DataFrame, sede_sel: str | None) -> pd.DataFrame:
+def apply_sede_chip(df: pd.DataFrame, sede_sel: Optional[str]) -> pd.DataFrame:
     """Aplica el filtro de sede si corresponde; si sede_sel es None, no filtra."""
     col = _detect_sede_col(df)
     if not col or sede_sel is None:

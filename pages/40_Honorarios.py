@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from typing import Optional, Dict
 
 from lib_common import (
     header_ui,
@@ -46,7 +47,7 @@ fecha_cols = {
     "pago": ["fecha_ce", "fecha_pagado"],
 }
 
-def _pick_col(df_in: pd.DataFrame, options: list[str]) -> str | None:
+def _pick_col(df_in: pd.DataFrame, options: list[str]) -> Optional[str]:
     for col in options:
         if col in df_in.columns:
             return col
@@ -194,7 +195,12 @@ def _amount_html(ce_val: float, no_val: float) -> str:
         "</div>"
     )
 
-def _render_metric_block(title: str, main_value: str, footer: str | None = None, breakdown_html: str | None = None):
+def _render_metric_block(
+    title: str,
+    main_value: str,
+    footer: Optional[str] = None,
+    breakdown_html: Optional[str] = None,
+):
     parts: list[str] = [
         "<div class='honorarios-metric-card'>",
         f"<div class='honorarios-metric-card__title'>{title}</div>",
@@ -408,7 +414,7 @@ if count_pagadas:
         bin_size = st.slider("Ancho de clase (dias)", 1, 60, 1, key="hon_hist_bin")
         hist_cols = st.columns(2)
 
-        def _stats(series: pd.Series) -> dict[str, float] | None:
+        def _stats(series: pd.Series) -> Optional[Dict[str, float]]:
             vals = series.dropna().to_numpy()
             if vals.size == 0:
                 return None

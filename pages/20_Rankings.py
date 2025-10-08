@@ -1,15 +1,18 @@
 # pages/20_Rankings.py
 from __future__ import annotations
+from typing import Optional, List, Union
+
 import streamlit as st
 import pandas as pd
 import numpy as np
+from pandas.io.formats.style import Styler
 
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
     advanced_filters_ui, apply_advanced_filters, header_ui, style_table, money,
     sanitize_df, safe_markdown
 )
-from lib_metrics import ensure_derived_fields
+from lib_metrics import ensure_derived_fields, compute_monto_pagado_real
 from lib_report import excel_bytes_single, excel_bytes_multi
 
 # ================== Estilos globales de la tabla ==================
@@ -34,6 +37,7 @@ if df0 is None:
     st.stop()
 
 df0 = ensure_derived_fields(df0)
+df0["monto_pagado_real"] = compute_monto_pagado_real(df0)
 
 # -------- Filtros globales (sin prioritario global) --------
 fac_ini, fac_fin, pay_ini, pay_fin = general_date_filters_ui(df0)
@@ -43,12 +47,10 @@ sede, org, prov, cc, oc, est, _prio_removed = advanced_filters_ui(
 df = apply_general_filters(df0, fac_ini, fac_fin, pay_ini, pay_fin)
 df = apply_advanced_filters(df, sede, org, prov, cc, oc, est, prio=[])
 
-# Trabajamos con pagadas
-pagadas_mask_global = df.get("is_pagada") if "is_pagada" in df.columns else None
-if pagadas_mask_global is not None:
-    dfp = df[pagadas_mask_global].copy()
-else:
-    dfp = df[df["estado_pago"] == "pagada"].copy()
+# Trabajamos con pagadas segun monto pagado real
+pagadas_series = pd.to_numeric(df.get("monto_pagado_real"), errors="coerce") if "monto_pagado_real" in df else pd.Series(0.0, index=df.index)
+pagadas_series = pagadas_series.fillna(0.0)
+dfp = df[pagadas_series > 0].copy()
 if dfp.empty:
     st.info("No hay facturas pagadas con los filtros actuales.")
     st.stop()
@@ -120,12 +122,12 @@ def _agg_base(df_in: pd.DataFrame, group_col: str) -> pd.DataFrame:
          .assign(
              prov_prioritario=df_in.get("prov_prioritario", False).astype(bool),
              cuenta_especial=df_in.get("cuenta_especial", False).astype(bool),
-             monto_ce=pd.to_numeric(df_in.get("monto_ce", df_in.get("monto_pagado", 0.0)), errors="coerce").fillna(0.0),
+             monto_pagado_real=pd.to_numeric(df_in.get("monto_pagado_real", 0.0), errors="coerce").fillna(0.0),
          )
          .groupby(group_col, dropna=False)
          .agg(
              **{
-                 "Monto Pagado": ("monto_ce", "sum"),
+                 "Monto Pagado": ("monto_pagado_real", "sum"),
                  "Cantidad Documentos": (group_col, "count"),
                  "Cantidad Prioritario": ("prov_prioritario", "sum"),
                  "Cantidad Cuenta Especial": ("cuenta_especial", "sum"),
@@ -157,7 +159,7 @@ def agregar_ranking(
     df_in: pd.DataFrame,
     group_col: str,
     nombre_col: str,
-    drop_cols: list[str] | None = None,
+    drop_cols: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     agg = _agg_base(df_in, group_col)
     agg = agg.rename(columns={group_col: nombre_col})
@@ -196,7 +198,7 @@ def _format_money_cols_for_display(df_in: pd.DataFrame, cols: list[str]) -> pd.D
             df_disp[c] = df_disp[c].apply(lambda v: money(v) if pd.notnull(v) else v)
     return df_disp
 
-def _style_headers(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
+def _style_headers(df_disp: Union[pd.DataFrame, Styler]):
     """
     Resalta encabezados (azul rey, texto blanco), agranda fuente (FONT_SIZE),
     y alinea valores a la derecha (estilo contable). No afecta exportación.
@@ -307,19 +309,19 @@ def _resumen_dim(df_in: pd.DataFrame, flag_col: str, nombre_si: str, nombre_no: 
 
     tmp = df_in.assign(
         monto_autorizado=pd.to_numeric(df_in.get("monto_autorizado", 0.0), errors="coerce").fillna(0.0),
-        monto_ce=pd.to_numeric(df_in.get("monto_ce", df_in.get("monto_pagado", 0.0)), errors="coerce").fillna(0.0),
+        monto_pagado_real=pd.to_numeric(df_in.get("monto_pagado_real", 0.0), errors="coerce").fillna(0.0),
     )
 
     total_docs = len(tmp)
     total_aut = float(tmp["monto_autorizado"].sum())
-    total_pag = float(tmp["monto_ce"].sum())
+    total_pag = float(tmp["monto_pagado_real"].sum())
 
     g = (tmp.groupby(flag_col)
              .agg(
                  **{
                      "Cantidad Documentos": (flag_col, "count"),
                      "Monto Contabilizado": ("monto_autorizado", "sum"),
-                     "Monto Pagado": ("monto_ce", "sum"),
+                     "Monto Pagado": ("monto_pagado_real", "sum"),
                  }
              )
              .reset_index()
