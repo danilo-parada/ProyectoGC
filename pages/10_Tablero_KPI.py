@@ -137,30 +137,6 @@ sede, org, prov, cc, oc, est, _prio_removed = advanced_filters_ui(
     df0, show_controls=["sede", "org", "prov", "cc", "oc"]
 )
 
-estado_doc_options = [
-    "Todos",
-    "Autorizado sin Pago",
-    "Pagado",
-    "Facturado Sin Autorizar",
-]
-default_estado_doc = st.session_state.get("estado_doc_local", estado_doc_options[0])
-if default_estado_doc not in estado_doc_options:
-    default_estado_doc = estado_doc_options[0]
-estado_doc_choice = st.radio(
-    "Tipo de Doc./Estado (local)",
-    estado_doc_options,
-    horizontal=True,
-    index=estado_doc_options.index(default_estado_doc),
-    key="estado_doc_local",
-)
-estado_doc_map = {
-    "Todos": None,
-    "Autorizado sin Pago": "autorizada_sin_pago",
-    "Pagado": "pagada",
-    "Facturado Sin Autorizar": "sin_autorizacion",
-}
-estado_doc_value = estado_doc_map.get(estado_doc_choice)
-
 common_filters = {
     "fac_range": (fac_ini, fac_fin),
     "pay_range": (pay_ini, pay_fin),
@@ -175,12 +151,7 @@ common_filters = {
 }
 
 df_common_no_estado = apply_common_filters(df0, common_filters).copy()
-df_filtered_common = df_common_no_estado
-if estado_doc_value and "estado_doc" in df_filtered_common.columns:
-    estado_norm = df_filtered_common["estado_doc"].astype(str)
-    df_filtered_common = df_filtered_common[estado_norm == str(estado_doc_value)].copy()
-else:
-    df_filtered_common = df_filtered_common.copy()
+df_filtered_common = df_common_no_estado.copy()
 
 df = df_common_no_estado
 

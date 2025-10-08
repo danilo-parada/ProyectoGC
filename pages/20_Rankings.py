@@ -37,33 +37,8 @@ fac_ini, fac_fin, pay_ini, pay_fin = general_date_filters_ui(df0)
 sede, org, prov, cc, oc, est, _prio_removed = advanced_filters_ui(
     df0, show_controls=['sede','org','prov','cc','oc']
 )
-estado_doc_options = [
-    "Todos",
-    "Autorizado sin Pago",
-    "Pagado",
-    "Facturado Sin Autorizar",
-]
-default_estado_doc = st.session_state.get("estado_doc_local", estado_doc_options[0])
-if default_estado_doc not in estado_doc_options:
-    default_estado_doc = estado_doc_options[0]
-estado_doc_choice = st.radio(
-    "Tipo de Doc./Estado (local)",
-    estado_doc_options,
-    horizontal=True,
-    index=estado_doc_options.index(default_estado_doc),
-    key="estado_doc_local",
-)
-estado_doc_map = {
-    "Todos": None,
-    "Autorizado sin Pago": "autorizada_sin_pago",
-    "Pagado": "pagada",
-    "Facturado Sin Autorizar": "sin_autorizacion",
-}
-estado_doc_value = estado_doc_map.get(estado_doc_choice)
 df = apply_general_filters(df0, fac_ini, fac_fin, pay_ini, pay_fin)
 df = apply_advanced_filters(df, sede, org, prov, cc, oc, est, prio=[])
-if estado_doc_value and "estado_doc" in df.columns:
-    df = df[df["estado_doc"].astype(str) == estado_doc_value]
 
 # Trabajamos con pagadas
 dfp = df[df["estado_pago"] == "pagada"].copy()
