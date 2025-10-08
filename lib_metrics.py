@@ -367,6 +367,60 @@ def compute_kpis(df: pd.DataFrame) -> Dict[str, float]:
         "docs_pagados": float(pagadas_monto.sum()),
     }
 
+
+def _dic_mean(delta: pd.Series) -> float:
+    if delta is None or delta.empty:
+        return float("nan")
+
+    clean = delta.dropna()
+    clean = clean[(clean >= -5) & (clean <= 365)]
+    if clean.empty:
+        return float("nan")
+
+    return float(np.round(clean.mean(), 1))
+
+
+def compute_dic_split(df: pd.DataFrame) -> Dict[str, float]:
+    """Obtiene promedios DIC segmentados por estado de pago."""
+
+    if df is None or df.empty:
+        return {
+            "dic_pagadas_avg": float("nan"),
+            "dic_pagadas_n": 0,
+            "dic_contab_unpaid_avg": float("nan"),
+            "dic_contab_unpaid_n": 0,
+            "no_contab_n": 0,
+        }
+
+    data = ensure_derived_fields(df)
+
+    if "monto_pagado_real" not in data.columns:
+        data["monto_pagado_real"] = compute_monto_pagado_real(data)
+
+    fecha_emision = _sanitize_datetime(data.get("fecha_emision", data.get("fac_fecha_factura")))
+    fecha_contab = _sanitize_datetime(data.get("fecha_contabilizacion", data.get("fecha_cc")))
+
+    dic_delta = (fecha_contab - fecha_emision).dt.days
+
+    pagadas_mask = _derive_pagadas(data)
+    contab_mask = fecha_contab.notna() & fecha_emision.notna()
+
+    pagadas_valid = pagadas_mask & contab_mask
+    unpaid_valid = (~pagadas_mask) & contab_mask
+    no_contab_mask = fecha_contab.isna()
+
+    dic_pagadas_avg = _dic_mean(dic_delta.loc[pagadas_valid])
+    dic_contab_unpaid_avg = _dic_mean(dic_delta.loc[unpaid_valid])
+
+    return {
+        "dic_pagadas_avg": dic_pagadas_avg,
+        "dic_pagadas_n": int(pagadas_valid.sum()),
+        "dic_contab_unpaid_avg": dic_contab_unpaid_avg,
+        "dic_contab_unpaid_n": int(unpaid_valid.sum()),
+        "no_contab_n": int(no_contab_mask.sum()),
+    }
+
+
 def prepare_hist_data(df: pd.DataFrame, column: str, max_days: int = 100) -> pd.DataFrame:
     """Dataset limpio para histogramas (sin negativos/NaN, recorte por ventana)."""
     d = ensure_derived_fields(df)
