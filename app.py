@@ -51,18 +51,21 @@ def _card_html(
     actions: list[str] | None = None,
 ) -> str:
     status = "Listo" if ready else "Pendiente"
-    color = "#42d6a4" if ready else "#f7b955"
+    trend_class = "app-card__trend app-card__trend--success" if ready else "app-card__trend app-card__trend--warning"
     value = f"{rows:,}" if rows else "0"
     extras_html = "".join(extras) if extras else ""
     actions_html = "".join(actions) if actions else ""
+    hint_html = (
+        f'<p class="app-card__subtitle app-card__subtitle--muted">{hint}</p>' if hint else ""
+    )
     return (
         '<div class="app-card">'
         f'{actions_html}'
         f'<div class="app-card__title">{title}</div>'
         f'<div class="app-card__value">{value}</div>'
-        f'<div class="app-card__trend" style="color:{color};"><span>&bull; {status}</span></div>'
+        f'<div class="{trend_class}"><span>&bull; {status}</span></div>'
         f"{extras_html}"
-        f'<p style="margin-top:0.45rem;color:var(--app-text-muted);font-size:0.82rem;">{hint}</p>'
+        f"{hint_html}"
         '</div>'
     )
 

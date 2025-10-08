@@ -202,23 +202,23 @@ def _forecast_table_style(df_in: pd.DataFrame) -> pd.io.formats.style.Styler:
     sty = df_in.style.hide(axis="index")
     sty = sty.set_table_styles([
         {"selector": "thead tr", "props": [
-            ("background-color", "#0d2f66"),
-            ("color", "#FFFFFF"),
+            ("background-color", "var(--app-primary)"),
+            ("color", "var(--app-table-header-fg)"),
             ("text-transform", "uppercase"),
             ("letter-spacing", "0.6px"),
             ("font-weight", "600"),
-            ("font-size", "0.9rem"),
+            ("font-size", "var(--app-table-font-size)"),
         ]},
         {"selector": "th", "props": [
             ("background-color", "transparent"),
-            ("color", "#FFFFFF"),
+            ("color", "var(--app-table-header-fg)"),
             ("padding", "12px 16px"),
         ]},
         {"selector": "tbody td", "props": [
-            ("font-size", "0.95rem"),
+            ("font-size", "var(--app-table-font-size)"),
             ("padding", "12px 16px"),
             ("border-bottom", "1px solid #e0e6ff"),
-            ("color", "#132542"),
+            ("color", "var(--app-text-muted)"),
         ]},
         {"selector": "tbody tr:nth-child(even)", "props": [
             ("background-color", "#f5f7ff"),

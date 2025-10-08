@@ -11,9 +11,9 @@ from lib_common import (
 from lib_report import excel_bytes_single, excel_bytes_multi
 
 # ================== Estilos globales de la tabla ==================
-HEADER_BG = "#003399"   # azul rey
-HEADER_FG = "#FFFFFF"   # blanco
-FONT_SIZE = "18px"      # <-- Ajusta aquí el tamaño de letra de TODA la tabla
+HEADER_BG = "var(--app-primary)"   # azul corporativo global
+HEADER_FG = "var(--app-table-header-fg)"   # texto encabezado global
+FONT_SIZE = "var(--app-table-font-size)"
 
 st.set_page_config(page_title="Rankings", layout="wide")
 header_ui(

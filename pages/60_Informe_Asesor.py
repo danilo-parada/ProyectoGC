@@ -25,11 +25,11 @@ header_ui(
 )
 
 # -------------------- Estilos locales para tablas --------------------
-TABLE_HEADER_BG = "#002b6f"
-TABLE_HEADER_FG = "#FFFFFF"
+TABLE_HEADER_BG = "var(--app-primary)"
+TABLE_HEADER_FG = "var(--app-table-header-fg)"
 TABLE_STRIPED_BG = "#f2f5ff"
 TABLE_HOVER_BG = "#e0e8ff"
-TABLE_FONT_SIZE = "16px"
+TABLE_FONT_SIZE = "var(--app-table-font-size)"
 TABLE_ROW_PADDING = "16px 22px"
 
 
@@ -150,7 +150,11 @@ def _card_html(
         classes.append("app-card--accent")
     title_html = html.escape(str(title))
     value_html = html.escape(str(value))
-    subtitle_html = f'<p style="margin:0;color:var(--app-text-muted);font-size:0.85rem;">{html.escape(str(subtitle))}</p>' if subtitle else ""
+    subtitle_html = (
+        f'<p class="app-card__subtitle">{html.escape(str(subtitle))}</p>'
+        if subtitle
+        else ""
+    )
     tag_html = ""
     if tag:
         tag_cls = "app-card__tag"
@@ -160,7 +164,7 @@ def _card_html(
     stats_html = ""
     if stats:
         pills = "".join(
-            f'<div class="app-inline-stats__item"><span style="font-weight:600;color:var(--app-text);">{html.escape(str(label))}:</span> {html.escape(str(val))}</div>'
+            f'<div class="app-inline-stats__item"><span class="app-inline-stats__label">{html.escape(str(label))}:</span> {html.escape(str(val))}</div>'
             for label, val in stats
         )
         stats_html = f'<div class="app-inline-stats">{pills}</div>'
