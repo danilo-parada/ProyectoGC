@@ -145,6 +145,7 @@ def _table_style(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
             ("padding", TABLE_ROW_PADDING),
             ("text-align", "right"),
             ("border-bottom", "1px solid #d9e1ff"),
+            ("color", "var(--app-table-body-fg)"),
         ]},
         {"selector": "tbody tr:nth-child(even)", "props": [
             ("background-color", TABLE_STRIPED_BG)
