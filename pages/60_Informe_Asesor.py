@@ -353,7 +353,12 @@ else:
     n2 = df_nopag[df_nopag["Nivel"].eq("Doc. Pendiente de Autorización")] if "Nivel" in df_nopag else df_nopag.iloc[0:0]
 
 def draw_debt_panel(title: str, dpanel: pd.DataFrame):
-    st.markdown('<div class="app-title-block"><h3>' + html.escape(title) + '</h3><p>Desglose por cuenta especial</p></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="app-title-block"><h3 style="color:#000;">'
+        + html.escape(title)
+        + '</h3><p>Desglose por cuenta especial</p></div>',
+        unsafe_allow_html=True,
+    )
     if "cuenta_especial" not in dpanel:
         st.info("Sin campo de Cuenta Especial para desglosar.")
         return
