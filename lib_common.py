@@ -141,7 +141,16 @@ def style_table(
                 width: 100% !important;
                 border-collapse: separate !important;
                 border-spacing: 0;
-                color: var(--app-table-body-fg);
+                color: #000000;
+            }
+            .styled-table-wrapper td {
+                color: #000000 !important;
+                opacity: 1 !important;
+                font-weight: 500;
+            }
+            .styled-table-wrapper th {
+                color: #000000 !important;
+                font-weight: 700;
             }
             </style>
             """,
