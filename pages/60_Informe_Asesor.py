@@ -1,12 +1,15 @@
 # pages/60_Informe_Asesor.py
 from __future__ import annotations
 
+from datetime import datetime, date
+from typing import List, Optional, Tuple, Union
+
 import html
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from datetime import datetime, date
+from pandas.io.formats.style import Styler
 
 from core.utils import LABELS, TOOLTIPS
 from lib_common import (
@@ -117,7 +120,7 @@ _BUDGET_PANEL_STYLE = """
 """
 
 
-def _table_style(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
+def _table_style(df_disp: Union[pd.DataFrame, Styler]):
     """Aplica el estilo de tablas usado en Rankings para tablas estáticas."""
 
     if isinstance(df_disp, pd.DataFrame):
@@ -244,7 +247,7 @@ def _agg_block(d: pd.DataFrame, mask):
 
 def _compute_presupuesto_selection(
     prior: pd.DataFrame, presupuesto: float
-) -> tuple[pd.DataFrame, float, float, dict | None]:
+) -> Tuple[pd.DataFrame, float, float, Optional[dict]]:
     """Devuelve selección acumulada, suma, saldo restante y próxima factura."""
 
     if prior is None or prior.empty:
@@ -288,14 +291,14 @@ def _compute_presupuesto_selection(
 def _card_html(
     title: str,
     value: str,
-    subtitle: str | None = None,
+    subtitle: Optional[str] = None,
     *,
-    tag: str | None = None,
+    tag: Optional[str] = None,
     tag_variant: str = "success",
     tone: str = "default",
-    stats: list[tuple[str, str]] | None = None,
+    stats: Optional[List[Tuple[str, str]]] = None,
     compact: bool = True,
-    tooltip: str | None = None,
+    tooltip: Optional[str] = None,
 ) -> str:
     classes = ["app-card", "app-card--frost"]
     if compact:

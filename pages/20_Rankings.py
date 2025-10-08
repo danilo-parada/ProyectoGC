@@ -1,8 +1,11 @@
 # pages/20_Rankings.py
 from __future__ import annotations
+from typing import Optional, List, Union
+
 import streamlit as st
 import pandas as pd
 import numpy as np
+from pandas.io.formats.style import Styler
 
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
@@ -156,7 +159,7 @@ def agregar_ranking(
     df_in: pd.DataFrame,
     group_col: str,
     nombre_col: str,
-    drop_cols: list[str] | None = None,
+    drop_cols: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     agg = _agg_base(df_in, group_col)
     agg = agg.rename(columns={group_col: nombre_col})
@@ -195,7 +198,7 @@ def _format_money_cols_for_display(df_in: pd.DataFrame, cols: list[str]) -> pd.D
             df_disp[c] = df_disp[c].apply(lambda v: money(v) if pd.notnull(v) else v)
     return df_disp
 
-def _style_headers(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
+def _style_headers(df_disp: Union[pd.DataFrame, Styler]):
     """
     Resalta encabezados (azul rey, texto blanco), agranda fuente (FONT_SIZE),
     y alinea valores a la derecha (estilo contable). No afecta exportación.

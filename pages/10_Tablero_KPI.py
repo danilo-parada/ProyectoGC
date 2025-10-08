@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import html
+from typing import List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -29,9 +31,9 @@ GRN  = "#2ecc71"
 def _metric_card(
     title: str,
     value: str,
-    caption: str | None = None,
+    caption: Optional[str] = None,
     *,
-    tooltip: str | None = None,
+    tooltip: Optional[str] = None,
 ) -> str:
     extra = f'<p class="app-card__subtitle">{caption}</p>' if caption else ""
     tooltip_attr = f' title="{html.escape(tooltip)}"' if tooltip else ""
@@ -52,7 +54,13 @@ def _stat_pill(label: str, value: str) -> str:
     )
 
 
-def _segment_card(title: str, primary: str, stats: list[tuple[str, str]], *, tooltip: str | None = None) -> str:
+def _segment_card(
+    title: str,
+    primary: str,
+    stats: List[Tuple[str, str]],
+    *,
+    tooltip: Optional[str] = None,
+) -> str:
     pills = "".join(_stat_pill(name, val) for name, val in stats)
     tooltip_attr = f' title="{html.escape(tooltip)}"' if tooltip else ""
     return (
@@ -80,7 +88,7 @@ def _render_range_cards(items: list[tuple[str, str]]):
     safe_markdown('<div class="app-range-card-grid">' + cards_html + '</div>')
 
 
-def _render_percentile_cards(items: list[tuple[str, str, str | None]]):
+def _render_percentile_cards(items: List[Tuple[str, str, Optional[str]]]):
     if not items:
         return
     cards = []
