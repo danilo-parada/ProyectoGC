@@ -434,9 +434,9 @@ st.subheader("2) Top 5 Proveedores (por Monto Contabilizado)")
 
 def build_top_proveedores(df_in: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
     cols_out = [
-        "Razón Social","Monto Contabilizado","Monto Pagado","Días Promedio Pago",
+        "Razón Social","Monto Pagado","Días Promedio Pago",
         "Cant. Fact. ≤30 días","Cant. Fact. >30 días",
-        "Proveedor Prioritario","Cuenta Especial"
+        "Proveedor Prioritario"
     ]
     if df_in.empty:
         return pd.DataFrame(columns=cols_out)
@@ -452,22 +452,19 @@ def build_top_proveedores(df_in: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
         d.groupby("prr_razon_social", dropna=False)
          .agg(
              **{
-                 "Monto Contabilizado": ("monto_autorizado", "sum"),
-                 "Monto Pagado": ("monto_pagado", "sum"),
+                 "Monto Pagado": ("monto_autorizado", "sum"),
                  "Días Promedio Pago": ("dias_a_pago_calc", lambda s: s[s >= 0].mean()),
                  "Cant. Fact. ≤30 días": ("dias_a_pago_calc", lambda s: (s <= 30).sum()),
                  "Cant. Fact. >30 días": ("dias_a_pago_calc", lambda s: (s > 30).sum()),
                  "Proveedor Prioritario": ("prov_prioritario", "mean"),
-                 "Cuenta Especial": ("cuenta_especial", "mean"),
              }
          )
          .reset_index()
          .rename(columns={"prr_razon_social": "Razón Social"})
-         .sort_values("Monto Contabilizado", ascending=False)
+         .sort_values("Monto Pagado", ascending=False)
          .head(top_n)
     )
     grp["Proveedor Prioritario"] = grp["Proveedor Prioritario"].apply(lambda v: "Sí" if v >= 0.5 else "No")
-    grp["Cuenta Especial"] = grp["Cuenta Especial"].apply(lambda v: "Sí" if v >= 0.5 else "No")
     return grp[cols_out]
 
 if not df_pag.empty:
@@ -475,7 +472,6 @@ if not df_pag.empty:
     rankings_df = build_top_proveedores(df_pag, top_n=top_n)
     rankings_display = rankings_df.assign(
         **{
-            "Monto Contabilizado": rankings_df["Monto Contabilizado"].map(money),
             "Monto Pagado": rankings_df["Monto Pagado"].map(money),
             "Días Promedio Pago": rankings_df["Días Promedio Pago"].map(one_decimal),
         }
