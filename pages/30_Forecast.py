@@ -8,11 +8,12 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import warnings
-from math import sqrt
+from math import ceil, sqrt
 from sklearn.linear_model import LinearRegression
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from statsmodels.tools.sm_exceptions import ConvergenceWarning
 from scipy.stats import norm
+from streamlit.components.v1 import html as components_html
 
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
