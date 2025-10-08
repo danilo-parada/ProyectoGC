@@ -402,14 +402,6 @@ else:
     total_pagadas = int(kpi_total["docs_pagados"])
     cards = [
         _card_html(
-            "Total facturado",
-            money(kpi_total["total_facturado"]),
-            subtitle="Base filtrada",
-            tag=f"{total_docs:,} doc.",
-            tone="accent",
-            tooltip=TOOLTIPS["total_facturado"],
-        ),
-        _card_html(
             "Desglose facturado",
             money(kpi_total["total_facturado"]),
             subtitle="Pagado vs sin pagar",
@@ -419,14 +411,6 @@ else:
             ],
             compact=False,
             tooltip=TOOLTIPS["desglose_facturado"],
-        ),
-        _card_html(
-            "Facturado pagado",
-            money(kpi_total["facturado_pagado"]),
-        ),
-        _card_html(
-            "Facturado sin pagar",
-            money(kpi_total["facturado_sin_pagar"]),
         ),
         _card_html(
             "Total pagado (real)",
