@@ -2,6 +2,8 @@
 import pandas as pd
 import streamlit as st
 
+from typing import List, Optional
+
 from lib_common import (
     # setup / UI
     init_session_keys, read_any, style_table, header_ui, sanitize_df, safe_markdown,
@@ -47,8 +49,8 @@ def _card_html(
     rows: int,
     ready: bool,
     hint: str,
-    extras: list[str] | None = None,
-    actions: list[str] | None = None,
+    extras: Optional[List[str]] = None,
+    actions: Optional[List[str]] = None,
 ) -> str:
     status = "Listo" if ready else "Pendiente"
     trend_class = "app-card__trend app-card__trend--success" if ready else "app-card__trend app-card__trend--warning"

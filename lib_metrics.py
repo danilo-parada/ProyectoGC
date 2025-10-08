@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Mapping, Sequence, Any
+from typing import Dict, Mapping, Sequence, Any, Optional
 
 import logging
 
@@ -61,7 +61,7 @@ def _safe_to_datetime(s: pd.Series) -> pd.Series:
     except Exception:
         return pd.to_datetime(pd.NaT)
 
-def ensure_derived_fields(df_in: pd.DataFrame | None) -> pd.DataFrame:
+def ensure_derived_fields(df_in: Optional[pd.DataFrame]) -> pd.DataFrame:
     """Crea columnas derivadas comunes sin modificar ``df_in``.
 
     Cuando la entrada es ``None`` se retorna un ``DataFrame`` vacío para que
@@ -155,21 +155,25 @@ def ensure_derived_fields(df_in: pd.DataFrame | None) -> pd.DataFrame:
 
     return df
 
-def _first_present(df: pd.DataFrame, candidates: Sequence[str]) -> str | None:
+def _first_present(df: pd.DataFrame, candidates: Sequence[str]) -> Optional[str]:
     for col in candidates:
         if col in df.columns:
             return col
     return None
 
 
-def _sum_numeric(series: pd.Series | None) -> float:
+def _sum_numeric(series: Optional[pd.Series]) -> float:
     if series is None:
         return 0.0
     values = pd.to_numeric(series, errors="coerce").fillna(0.0)
     return float(values.sum())
 
 
-def _paid_mask(df: pd.DataFrame, amount_col: str | None, pay_date_col: str | None) -> pd.Series:
+def _paid_mask(
+    df: pd.DataFrame,
+    amount_col: Optional[str],
+    pay_date_col: Optional[str],
+) -> pd.Series:
     mask = pd.Series(False, index=df.index)
 
     if "estado_pago" in df.columns:
@@ -189,8 +193,8 @@ def _paid_mask(df: pd.DataFrame, amount_col: str | None, pay_date_col: str | Non
 
 def _mean_days(
     df: pd.DataFrame,
-    end_col: str | None,
-    start_col: str | None,
+    end_col: Optional[str],
+    start_col: Optional[str],
     *,
     clip: tuple[int, int] = (-5, 365),
 ) -> float:
@@ -249,13 +253,13 @@ def apply_common_filters(df: pd.DataFrame, filtros: Mapping[str, Any]) -> pd.Dat
     return base
 
 
-def _sanitize_monto(series: pd.Series | None) -> pd.Series:
+def _sanitize_monto(series: Optional[pd.Series]) -> pd.Series:
     if series is None:
         return pd.Series(dtype="float64")
     return pd.to_numeric(series, errors="coerce").fillna(0.0)
 
 
-def _sanitize_datetime(series: pd.Series | None) -> pd.Series:
+def _sanitize_datetime(series: Optional[pd.Series]) -> pd.Series:
     if series is None:
         return pd.Series(dtype="datetime64[ns]")
     return pd.to_datetime(series, errors="coerce")
@@ -275,8 +279,14 @@ def _derive_pagadas(df: pd.DataFrame) -> pd.Series:
     return monto_ce.gt(0) | fecha_ce.notna()
 
 
-def _mean_days_clip(df: pd.DataFrame, start_col: str | None, end_col: str | None, *, mask: pd.Series | None = None,
-                    clip: tuple[int, int] = (-5, 365)) -> float:
+def _mean_days_clip(
+    df: pd.DataFrame,
+    start_col: Optional[str],
+    end_col: Optional[str],
+    *,
+    mask: Optional[pd.Series] = None,
+    clip: tuple[int, int] = (-5, 365),
+) -> float:
     if not start_col or not end_col or start_col not in df.columns or end_col not in df.columns:
         return float("nan")
 
