@@ -88,6 +88,15 @@ _BUDGET_PANEL_STYLE = """
     font-weight: 700;
     color: #1f2a55;
 }
+.budget-panel__resume-note {
+    font-size: 0.78rem;
+    color: #3f4d78;
+    margin: 0.35rem 0 0;
+    text-align: right;
+}
+.budget-panel__resume-note--muted {
+    color: #6c7ba6;
+}
 .budget-panel__helper {
     font-size: 0.85rem;
     color: #667399;
@@ -201,6 +210,50 @@ def _agg_block(d: pd.DataFrame, mask):
     monto = float(pd.to_numeric(sub.get("importe_deuda"), errors="coerce").fillna(0.0).sum())
     cant = int(len(sub))
     return monto, cant
+
+
+def _compute_presupuesto_selection(
+    prior: pd.DataFrame, presupuesto: float
+) -> tuple[pd.DataFrame, float, float, dict | None]:
+    """Devuelve selección acumulada, suma, saldo restante y próxima factura."""
+
+    if prior is None or prior.empty:
+        return pd.DataFrame(), 0.0, float(presupuesto), None
+
+    tmp = prior.copy()
+    tmp["importe_regla_num"] = pd.to_numeric(
+        tmp.get("importe_regla"), errors="coerce"
+    ).fillna(0.0)
+    tmp["acum"] = tmp["importe_regla_num"].cumsum()
+
+    seleccion = tmp[tmp["acum"] <= float(presupuesto)].drop(
+        columns=["acum", "importe_regla_num"], errors="ignore"
+    )
+    suma_sel = float(
+        tmp.loc[tmp["acum"] <= float(presupuesto), "importe_regla_num"].sum()
+    )
+
+    restante_raw = float(presupuesto) - suma_sel
+    restante = max(0.0, restante_raw)
+
+    siguiente = tmp[tmp["acum"] > float(presupuesto)].head(1)
+    next_info = None
+    if not siguiente.empty:
+        row = siguiente.iloc[0]
+        next_amount = float(row.get("importe_regla_num", 0.0))
+        prov_val = row.get("prr_razon_social") or row.get("Proveedor")
+        prov = str(prov_val) if pd.notna(prov_val) else "Proveedor sin identificar"
+        doc_val = row.get("fac_numero") or row.get("doc_numero") or row.get("doc_id")
+        doc = str(doc_val) if pd.notna(doc_val) else "s/d"
+        adicional = max(0.0, next_amount - restante)
+        next_info = {
+            "monto": next_amount,
+            "proveedor": prov,
+            "documento": doc,
+            "adicional": adicional,
+        }
+
+    return seleccion, suma_sel, restante, next_info
 
 def _card_html(
     title: str,
@@ -728,16 +781,56 @@ else:
                     st.rerun()
                 except AttributeError:
                     st.experimental_rerun()
+        seleccion_df, suma_sel, restante, next_info = _compute_presupuesto_selection(
+            prior, float(monto_presu)
+        )
         with col_resume:
-            st.markdown(
-                f"""
-                <div class=\"budget-panel__resume\">
-                    <span class=\"budget-panel__resume-label\">Equivale a</span>
-                    <span class=\"budget-panel__resume-value\">{money(monto_presu)}</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            amount_col, action_col = st.columns([1.7, 1.3])
+            with amount_col:
+                st.markdown(
+                    f"""
+                    <div class=\"budget-panel__resume\">
+                        <span class=\"budget-panel__resume-label\">Equivale a</span>
+                        <span class=\"budget-panel__resume-value\">{money(monto_presu)}</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            with action_col:
+                if next_info:
+                    help_text = (
+                        f"Se sumarán {money(next_info['adicional'])} para incorporar la próxima factura."
+                    )
+                    button_label = "➕ Agregar factura extra"
+                    if st.button(
+                        button_label,
+                        key="add_extra_invoice",
+                        help=(
+                            f"{next_info['proveedor']} — Factura {next_info['documento']} por {money(next_info['monto'])}. "
+                            + help_text
+                        ),
+                        use_container_width=True,
+                    ):
+                        nuevo_monto = float(monto_presu + next_info["adicional"])
+                        st.session_state[_LOCAL_AMOUNT_KEY] = nuevo_monto
+                        st.session_state[budget_input_key] = _format_currency_plain(nuevo_monto)
+                        try:
+                            st.rerun()
+                        except AttributeError:
+                            st.experimental_rerun()
+                    st.markdown(
+                        f"<p class='budget-panel__resume-note'>Próxima: {next_info['proveedor']} — Factura {next_info['documento']} ({money(next_info['monto'])})</p>",
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown(
+                        f"<p class='budget-panel__resume-note budget-panel__resume-note--muted'>Ajuste necesario: {money(next_info['adicional'])}</p>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        "<p class='budget-panel__resume-note budget-panel__resume-note--muted'>No hay facturas adicionales por agregar.</p>",
+                        unsafe_allow_html=True,
+                    )
         st.markdown(
             """
                 </div>
@@ -749,40 +842,27 @@ else:
 
 
     # Selección por presupuesto (corte por acumulado)
-    tmp = prior.copy()
-    tmp["acum"] = tmp["importe_regla"].cumsum()
-    seleccion = tmp[tmp["acum"] <= float(monto_presu)].drop(columns=["acum"])
+    seleccion = seleccion_df
 
     # Controles numericos
-    suma_sel = float(pd.to_numeric(seleccion.get("importe_regla", pd.Series(dtype=float)), errors="coerce").fillna(0.0).sum())
-    restante_raw = float(monto_presu) - suma_sel
-    restante = max(0.0, restante_raw)
     resumen_cards = [
         _card_html("Presupuesto ingresado", money(float(monto_presu)), subtitle="Disponible hoy", tone="accent"),
         _card_html("Suma selección", money(suma_sel), subtitle="Total comprometido"),
         _card_html("Saldo sin asignar", money(restante), subtitle="Presupuesto - selección", tag_variant="warning"),
     ]
 
-    siguiente = tmp[tmp["acum"] > float(monto_presu)].head(1)
-    if not siguiente.empty:
-        siguiente_row = siguiente.iloc[0]
-        next_amount = float(pd.to_numeric(siguiente_row.get("importe_regla"), errors="coerce"))
-        prov_val = siguiente_row.get("prr_razon_social") or siguiente_row.get("Proveedor")
-        prov = str(prov_val) if pd.notna(prov_val) else "Proveedor sin identificar"
-        doc_val = siguiente_row.get("fac_numero") or siguiente_row.get("doc_numero") or siguiente_row.get("doc_id")
-        doc = str(doc_val) if pd.notna(doc_val) else "s/d"
-        adicional = max(0.0, next_amount - restante)
+    if next_info:
         resumen_cards.append(
             _card_html(
                 "Próxima factura a incorporar",
-                money(next_amount),
-                subtitle=f"{prov} — Factura {doc}",
-                tag=f"Faltan {money(adicional)}" if adicional > 0 else "Disponible",
-                tag_variant="warning" if adicional > 0 else "success",
+                money(next_info["monto"]),
+                subtitle=f"{next_info['proveedor']} — Factura {next_info['documento']}",
+                tag=f"Faltan {money(next_info['adicional'])}" if next_info["adicional"] > 0 else "Disponible",
+                tag_variant="warning" if next_info["adicional"] > 0 else "success",
                 tone="accent",
                 stats=[
                     ("Saldo libre actual", money(restante)),
-                    ("Ajuste necesario", money(adicional)),
+                    ("Ajuste necesario", money(next_info["adicional"])),
                 ],
                 compact=False,
             )
