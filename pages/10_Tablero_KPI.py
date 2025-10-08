@@ -232,14 +232,6 @@ metric_cards = [
         tooltip=TOOLTIPS["desglose_facturado"],
     ),
     _metric_card(
-        "Facturado pagado",
-        money(kpi["facturado_pagado"]),
-    ),
-    _metric_card(
-        "Facturado sin pagar",
-        money(kpi["facturado_sin_pagar"]),
-    ),
-    _metric_card(
         "Total pagado (real)",
         money(kpi["total_pagado_real"]),
         caption=f"Pagadas: {int(kpi['docs_pagados']):,}",
