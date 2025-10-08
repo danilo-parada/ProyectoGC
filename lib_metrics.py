@@ -1,7 +1,11 @@
 from __future__ import annotations
-import pandas as pd
+
+from typing import Dict, Mapping, Sequence, Any
+
 import numpy as np
-from typing import Tuple, Dict
+import pandas as pd
+
+from lib_common import apply_advanced_filters
 
 def _safe_to_numeric(s: pd.Series, default: float = 0.0) -> pd.Series:
     try:
@@ -73,63 +77,151 @@ def ensure_derived_fields(df_in: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def split_by_estado(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Devuelve (pagadas, autorizadas_sin_pago, sin_autorizacion)."""
-    d = df.copy()
-    pag = d[d["estado_pago"] == "pagada"].copy()
-    aut = d[d["estado_pago"] == "autorizada_sin_pago"].copy()
-    sin = d[d["estado_pago"] == "sin_autorizacion"].copy()
-    return pag, aut, sin
+def _first_present(df: pd.DataFrame, candidates: Sequence[str]) -> str | None:
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+
+def _sum_numeric(series: pd.Series | None) -> float:
+    if series is None:
+        return 0.0
+    values = pd.to_numeric(series, errors="coerce").fillna(0.0)
+    return float(values.sum())
+
+
+def _paid_mask(df: pd.DataFrame, amount_col: str | None, pay_date_col: str | None) -> pd.Series:
+    mask = pd.Series(False, index=df.index)
+
+    if "estado_pago" in df.columns:
+        estados = df["estado_pago"].astype(str).str.lower()
+        mask = mask | estados.str.contains("pagad", na=False)
+
+    if amount_col and amount_col in df.columns:
+        monto = pd.to_numeric(df[amount_col], errors="coerce").fillna(0.0)
+        mask = mask | (monto > 0)
+
+    if pay_date_col and pay_date_col in df.columns:
+        fechas_pago = pd.to_datetime(df[pay_date_col], errors="coerce")
+        mask = mask | fechas_pago.notna()
+
+    return mask
+
+
+def _mean_days(
+    df: pd.DataFrame,
+    end_col: str | None,
+    start_col: str | None,
+    *,
+    clip: tuple[int, int] = (-5, 365),
+) -> float:
+    if not end_col or not start_col:
+        return float("nan")
+
+    fechas_fin = pd.to_datetime(df[end_col], errors="coerce")
+    fechas_ini = pd.to_datetime(df[start_col], errors="coerce")
+    delta = (fechas_fin - fechas_ini).dt.days
+    delta = delta.dropna()
+    if clip:
+        delta = delta[(delta >= clip[0]) & (delta <= clip[1])]
+    if delta.empty:
+        return float("nan")
+    return float(np.round(delta.mean(), 1))
+
+
+def apply_common_filters(df: pd.DataFrame, filtros: Mapping[str, Any]) -> pd.DataFrame:
+    """Aplica filtros compartidos para Tablero KPI e Informe Asesor."""
+
+    if df is None:
+        return pd.DataFrame()
+
+    base = ensure_derived_fields(df)
+
+    fac_range = filtros.get("fac_range")
+    pay_range = filtros.get("pay_range")
+
+    if fac_range and len(fac_range) == 2 and all(fac_range):
+        fac_ini, fac_fin = fac_range
+        if "fac_fecha_factura" in base.columns:
+            fechas_fac = pd.to_datetime(base["fac_fecha_factura"], errors="coerce")
+            mask_fac = fechas_fac.dt.date.between(fac_ini, fac_fin)
+            base = base[mask_fac]
+
+    if pay_range and len(pay_range) == 2 and all(pay_range):
+        pay_ini, pay_fin = pay_range
+        if "fecha_pagado" in base.columns:
+            fechas_pago = pd.to_datetime(base["fecha_pagado"], errors="coerce")
+            mask_pay = fechas_pago.isna() | fechas_pago.dt.date.between(pay_ini, pay_fin)
+            base = base[mask_pay]
+
+    sede = filtros.get("sede", [])
+    org = filtros.get("org", [])
+    prov = filtros.get("prov", [])
+    cc = filtros.get("cc", [])
+    oc = filtros.get("oc", [])
+    est = filtros.get("est", [])
+    prio = filtros.get("prio", [])
+
+    base = apply_advanced_filters(base, sede, org, prov, cc, oc, est, prio)
+    return base
+
 
 def compute_kpis(df: pd.DataFrame) -> Dict[str, float]:
-    """KPIs comunes del período filtrado."""
-    d = ensure_derived_fields(df)
-    total_fact = float(d.get("fac_monto_total", pd.Series(dtype=float)).sum())
-    pag, aut_sp, _ = split_by_estado(d)
+    """Calcula KPIs monetarios y de tiempos sobre un DataFrame ya filtrado."""
 
-    total_aut_pag = float(pag.get("monto_autorizado", pd.Series(dtype=float)).sum())
-    monto_aut_sin_pago = float(aut_sp.get("monto_autorizado", pd.Series(dtype=float)).sum())
-    cnt_pag, cnt_aut, cnt_sin = len(pag), len(aut_sp), len(d) - len(pag) - len(aut_sp)
+    if df is None or df.empty:
+        return {
+            "total_facturado": 0.0,
+            "total_pagado": 0.0,
+            "dpp": float("nan"),
+            "dic": float("nan"),
+            "dcp": float("nan"),
+            "brecha_pct": 0.0,
+            "docs_total": 0.0,
+            "docs_pagados": 0.0,
+        }
 
-    # DPP (antes DSO)
-    dso = 0.0
-    if "dias_a_pago_calc" in pag.columns:
-        v = pag.loc[pag["dias_a_pago_calc"] >= 0, "dias_a_pago_calc"].dropna()
-        if not v.empty: dso = float(v.mean())
+    data = df.copy()
 
-    # DIC (antes TFC/TFA)
-    tfa = 0.0
-    if {"fac_fecha_factura", "fecha_cc"}.issubset(d.columns):
-        fac = pd.to_datetime(d["fac_fecha_factura"], errors="coerce")
-        cc = pd.to_datetime(d["fecha_cc"], errors="coerce")
-        estado = d.get("estado_pago", pd.Series(False, index=d.index, dtype=bool))
-        mask = estado.eq("pagada") & cc.notna() & fac.notna()
-        v = (cc - fac).dt.days.where(mask)
-        v = v[v >= 0].dropna()
-        if not v.empty:
-            tfa = float(v.mean())
-    elif "dias_factura_autorizacion" in d.columns:
-        v = d.loc[d["dias_factura_autorizacion"] >= 0, "dias_factura_autorizacion"].dropna()
-        if not v.empty:
-            tfa = float(v.mean())
+    for col in [
+        "fecha_emision",
+        "fac_fecha_factura",
+        "fecha_pago_ce",
+        "fecha_pagado",
+        "fecha_contabilizacion",
+        "fecha_cc",
+    ]:
+        if col in data.columns:
+            data[col] = pd.to_datetime(data[col], errors="coerce")
 
-    # DCP (antes TPC/TPA)
-    tpa = 0.0
-    if "dias_autorizacion_pago_calc" in pag.columns:
-        v = pag.loc[pag["dias_autorizacion_pago_calc"] >= 0, "dias_autorizacion_pago_calc"].dropna()
-        if not v.empty: tpa = float(v.mean())
+    fact_col = _first_present(data, ["monto_facturado", "fac_monto_total"])
+    pago_col = _first_present(data, ["monto_pagado"])
+    fecha_emision_col = _first_present(data, ["fecha_emision", "fac_fecha_factura"])
+    fecha_pago_col = _first_present(data, ["fecha_pago_ce", "fecha_pagado"])
+    fecha_contab_col = _first_present(data, ["fecha_contabilizacion", "fecha_cc"])
 
-    total_fact_en_pagadas = float(pag.get("fac_monto_total", pd.Series(dtype=float)).sum())
-    gap_pct = (1 - (total_aut_pag / total_fact_en_pagadas)) * 100 if total_fact_en_pagadas > 0 else 0.0
+    total_facturado = _sum_numeric(data.get(fact_col)) if fact_col else 0.0
+
+    paid_mask = _paid_mask(data, pago_col, fecha_pago_col)
+    data_pagadas = data[paid_mask].copy()
+    total_pagado = _sum_numeric(data_pagadas.get(pago_col)) if pago_col else 0.0
+
+    dpp = _mean_days(data_pagadas, fecha_pago_col, fecha_emision_col)
+    dic = _mean_days(data, fecha_contab_col, fecha_emision_col)
+    dcp = _mean_days(data, fecha_pago_col, fecha_contab_col)
+
+    brecha_pct = 100.0 * (total_pagado - total_facturado) / max(total_facturado, 1.0)
 
     return {
-        "total_facturado": total_fact,
-        "total_pagado_aut": total_aut_pag,
-        "monto_aut_sin_pago": monto_aut_sin_pago,
-        "cnt_pag": float(cnt_pag),
-        "cnt_aut_sin_pago": float(cnt_aut),
-        "cnt_sin_aut": float(cnt_sin),
-        "dso": dso, "tfa": tfa, "tpa": tpa, "gap_pct": gap_pct,
+        "total_facturado": total_facturado,
+        "total_pagado": total_pagado,
+        "dpp": dpp,
+        "dic": dic,
+        "dcp": dcp,
+        "brecha_pct": brecha_pct,
+        "docs_total": float(len(data)),
+        "docs_pagados": float(paid_mask.sum()),
     }
 
 def prepare_hist_data(df: pd.DataFrame, column: str, max_days: int = 100) -> pd.DataFrame:

@@ -10,11 +10,11 @@ from datetime import datetime, date
 
 from core.utils import LABELS, TOOLTIPS
 from lib_common import (
-    get_df_norm, general_date_filters_ui, apply_general_filters,
-    advanced_filters_ui, apply_advanced_filters, money, one_decimal, header_ui,
+    get_df_norm, general_date_filters_ui,
+    advanced_filters_ui, money, one_decimal, header_ui,
     style_table, sanitize_df, safe_markdown,
 )
-from lib_metrics import ensure_derived_fields, compute_kpis
+from lib_metrics import ensure_derived_fields, compute_kpis, apply_common_filters
 from lib_report import excel_bytes_single, generate_pdf_report
 
 # -------------------- Config & Header --------------------
@@ -174,8 +174,20 @@ fac_ini, fac_fin, pay_ini, pay_fin = general_date_filters_ui(df0)
 # Avanzado sin prioritario global (usamos ese filtro en secciones locales)
 sede, org, prov, cc, oc, est, _ = advanced_filters_ui(df0)
 
-df = apply_general_filters(df0, fac_ini, fac_fin, pay_ini, pay_fin)
-df = apply_advanced_filters(df, sede, org, prov, cc, oc, est, prio=[])
+common_filters = {
+    "fac_range": (fac_ini, fac_fin),
+    "pay_range": (pay_ini, pay_fin),
+    "sede": sede,
+    "org": org,
+    "prov": prov,
+    "cc": cc,
+    "oc": oc,
+    "est": est,
+    "prio": [],
+}
+
+df_filtered_common = apply_common_filters(df0, common_filters)
+df = df_filtered_common
 
 df_pag = df[df["estado_pago"] == "pagada"].copy()
 df_nopag = df[df["estado_pago"] != "pagada"].copy()
@@ -343,12 +355,12 @@ def _parse_currency_input(text: str, fallback: float) -> float:
 # 1) KPIs
 # =========================================================
 st.subheader("1) Resumen KPIs Facturas")
-if df.empty:
+kpi_total = compute_kpis(df_filtered_common)
+if df_filtered_common.empty:
     st.info("No hay datos con los filtros actuales.")
 else:
-    kpi_total = compute_kpis(df)
-    total_docs = len(df)
-    total_pagadas = len(df_pag)
+    total_docs = int(kpi_total["docs_total"])
+    total_pagadas = int(kpi_total["docs_pagados"])
     cards = [
         _card_html(
             "Total facturado",
@@ -358,29 +370,29 @@ else:
             tone="accent",
         ),
         _card_html(
-            "Total pagado (aut.)",
-            money(kpi_total["total_pagado_aut"]),
-            subtitle="Facturas con pago autorizado",
+            "Total pagado",
+            money(kpi_total["total_pagado"]),
+            subtitle="Facturas con pago registrado",
             tag=f"{total_pagadas:,} pagos",
         ),
         _card_html(
             LABELS["dpp_emision_pago"],
-            _fmt_days(kpi_total["dso"]),
+            _fmt_days(kpi_total["dpp"]),
             subtitle=TOOLTIPS["dpp_emision_pago"],
         ),
         _card_html(
             LABELS["dic_emision_contab"],
-            _fmt_days(kpi_total["tfa"]),
+            _fmt_days(kpi_total["dic"]),
             subtitle=TOOLTIPS["dic_emision_contab"],
         ),
         _card_html(
             LABELS["dcp_contab_pago"],
-            _fmt_days(kpi_total["tpa"]),
+            _fmt_days(kpi_total["dcp"]),
             subtitle=TOOLTIPS["dcp_contab_pago"],
         ),
         _card_html(
             LABELS["brecha_porcentaje"],
-            _fmt_pct(kpi_total["gap_pct"]),
+            _fmt_pct(kpi_total["brecha_pct"]),
             subtitle=TOOLTIPS["brecha_porcentaje"],
             tag_variant="warning",
         ),
@@ -392,20 +404,22 @@ else:
         st.markdown("### Desglose por cuenta especial")
         segment_cards: list[str] = []
         for flag in (True, False):
-            sub = df[df["cuenta_especial"] == flag]
-            k = compute_kpis(sub) if not sub.empty else compute_kpis(df.iloc[0:0])
+            sub = df_filtered_common[df_filtered_common["cuenta_especial"] == flag]
+            if sub.empty:
+                continue
+            k = compute_kpis(sub)
             stats = [
-                ("Total pagado", money(k["total_pagado_aut"])),
-                (LABELS["dpp_emision_pago"], _fmt_days(k["dso"])),
-                (LABELS["dic_emision_contab"], _fmt_days(k["tfa"])),
-                (LABELS["dcp_contab_pago"], _fmt_days(k["tpa"])),
-                (LABELS["brecha_porcentaje"], _fmt_pct(k["gap_pct"])),
+                ("Total pagado", money(k["total_pagado"])),
+                (LABELS["dpp_emision_pago"], _fmt_days(k["dpp"])),
+                (LABELS["dic_emision_contab"], _fmt_days(k["dic"])),
+                (LABELS["dcp_contab_pago"], _fmt_days(k["dcp"])),
+                (LABELS["brecha_porcentaje"], _fmt_pct(k["brecha_pct"])),
             ]
             segment_cards.append(
                 _card_html(
                     title=f"CE {'Si' if flag else 'No'}",
                     value=money(k["total_facturado"]),
-                    subtitle=f"{len(sub):,} doc." if len(sub) else "0 doc.",
+                    subtitle=f"{int(k['docs_total']):,} doc.",
                     stats=stats,
                     compact=False,
                     tone="accent" if flag else "default",
@@ -918,9 +932,9 @@ if st.button("📄 Generar PDF"):
     pdf_bytes = generate_pdf_report(
         secciones={"kpis": True,"rankings": True,"deuda": True,"presupuesto": True},
         kpis={
-            "total_facturado": money(compute_kpis(df)["total_facturado"]) if not df.empty else "-",
-            "total_pagado":   money(compute_kpis(df)["total_pagado_aut"]) if not df.empty else "-",
-            "dso": one_decimal(compute_kpis(df)["dso"]) if not df.empty else "-",
+            "total_facturado": money(kpi_total["total_facturado"]) if not df_filtered_common.empty else "-",
+            "total_pagado":   money(kpi_total["total_pagado"]) if not df_filtered_common.empty else "-",
+            "dso": "-" if (df_filtered_common.empty or pd.isna(kpi_total["dpp"])) else one_decimal(kpi_total["dpp"]),
         },
         rankings_df=rankings_df if 'rankings_df' in locals() else pd.DataFrame(),
         niveles_kpis={},
