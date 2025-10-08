@@ -185,6 +185,7 @@ df_no_pag = df[~pagadas_mask_bool].copy()
 st.subheader("Metricas principales del periodo")
 
 kpi = compute_kpis(df_filtered_common)
+dic_split = compute_dic_split(df_filtered_common)
 
 # ===== Base de pagos contabilizados (para DPP/DIC/DCP y promedios globales) =====
 pagadas_mask_full = pd.to_numeric(df.get("monto_pagado_real"), errors="coerce") if "monto_pagado_real" in df else pd.Series(0.0, index=df.index)
@@ -198,6 +199,25 @@ mean_tpc_kpi = kpi["dcp"]
 
 def _fmt_days_metric(value: float) -> str:
     return "s/d" if pd.isna(value) else f"{one_decimal(value)} días"
+
+
+def _fmt_dic_avg(value: float | None) -> str:
+    if value is None or pd.isna(value):
+        return "s/d"
+    return f"{one_decimal(value)} días"
+
+
+def _dic_stats_entries(dic_split: dict) -> list[tuple[str, str]]:
+    pagadas_avg = _fmt_dic_avg(dic_split.get("dic_pagadas_avg"))
+    pagadas_n = int(dic_split.get("dic_pagadas_n", 0))
+    contab_avg = _fmt_dic_avg(dic_split.get("dic_contab_unpaid_avg"))
+    contab_n = int(dic_split.get("dic_contab_unpaid_n", 0))
+    no_contab_n = int(dic_split.get("no_contab_n", 0))
+    return [
+        ("Pagadas", f"{pagadas_avg} • {pagadas_n:,} doc."),
+        ("Contab. sin pago", f"{contab_avg} • {contab_n:,} doc."),
+        ("No contabilizadas", f"{no_contab_n:,} doc."),
+    ]
 
 
 metric_cards = [
@@ -230,16 +250,19 @@ metric_cards = [
         tooltip=TOOLTIPS["dpp_emision_pago"],
     ),
     _metric_card(
-        LABELS["dic_emision_contab"],
-        _fmt_days_metric(mean_tfc_kpi),
-        tooltip=TOOLTIPS["dic_emision_contab"],
-    ),
-    _metric_card(
         LABELS["dcp_contab_pago"],
         _fmt_days_metric(mean_tpc_kpi),
         tooltip=TOOLTIPS["dcp_contab_pago"],
     ),
 ]
+metric_cards.append(
+    _segment_card(
+        LABELS["dic_emision_contab"],
+        f"{len(df_filtered_common):,} doc.",
+        _dic_stats_entries(dic_split),
+        tooltip=TOOLTIPS["dic_emision_contab"],
+    )
+)
 safe_markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>')
 
 # ====== KPIs por cuenta especial (Si/No) ======
@@ -254,14 +277,15 @@ if "cuenta_especial" in df_filtered_common.columns:
         if sub.empty:
             continue
         k = compute_kpis(sub)
+        dic_split_seg = compute_dic_split(sub)
 
         stats = [
             ("Documentos", f"{int(k['docs_total']):,}"),
             ("Total pagado (real)", money(k["total_pagado_real"])),
             (LABELS["dpp_emision_pago"], _fmt_days_metric(k["dpp"])),
-            (LABELS["dic_emision_contab"], _fmt_days_metric(k["dic"])),
             (LABELS["dcp_contab_pago"], _fmt_days_metric(k["dcp"])),
         ]
+        stats.extend(_dic_stats_entries(dic_split_seg))
         segment_cards.append(
             _segment_card(title, money(k["total_facturado"]), stats)
         )
