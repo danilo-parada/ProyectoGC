@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from datetime import datetime, date
 
+from core.utils import LABELS, TOOLTIPS
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
     advanced_filters_ui, apply_advanced_filters, money, one_decimal, header_ui,
@@ -219,9 +220,9 @@ else:
             tag=f"{total_pagadas:,} pagos",
         ),
         _card_html(
-            "DSO promedio",
+            LABELS["dpp_emision_pago"],
             _fmt_days(kpi_total["dso"]),
-            subtitle="Emision -> pago",
+            subtitle=TOOLTIPS["dpp_emision_pago"],
         ),
         _card_html(
             "TFA promedio",
@@ -229,14 +230,14 @@ else:
             subtitle="Emision -> contabilizacion",
         ),
         _card_html(
-            "TPA promedio",
+            LABELS["dcp_contab_pago"],
             _fmt_days(kpi_total["tpa"]),
-            subtitle="Contabilizacion -> pago",
+            subtitle=TOOLTIPS["dcp_contab_pago"],
         ),
         _card_html(
-            "Gap %",
+            LABELS["brecha_porcentaje"],
             _fmt_pct(kpi_total["gap_pct"]),
-            subtitle="Brecha contable vs facturado",
+            subtitle=TOOLTIPS["brecha_porcentaje"],
             tag_variant="warning",
         ),
     ]
@@ -251,10 +252,10 @@ else:
             k = compute_kpis(sub) if not sub.empty else compute_kpis(df.iloc[0:0])
             stats = [
                 ("Total pagado", money(k["total_pagado_aut"])),
-                ("DSO", _fmt_days(k["dso"])),
+                (LABELS["dpp_emision_pago"], _fmt_days(k["dso"])),
                 ("TFA", _fmt_days(k["tfa"])),
-                ("TPC", _fmt_days(k["tpa"])),
-                ("Gap %", _fmt_pct(k["gap_pct"])),
+                (LABELS["dcp_contab_pago"], _fmt_days(k["tpa"])),
+                (LABELS["brecha_porcentaje"], _fmt_pct(k["gap_pct"])),
             ]
             segment_cards.append(
                 _card_html(

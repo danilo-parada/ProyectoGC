@@ -1,4 +1,4 @@
-# 10_Tablero_KPI.py — KPI con Gap-1, promedios GLOBAL/LOCAL y histogramas alineados
+# 10_Tablero_KPI.py — KPI con brecha porcentual, promedios GLOBAL/LOCAL y histogramas alineados
 from __future__ import annotations
 
 import html
@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from core.utils import LABELS, TOOLTIPS
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
     advanced_filters_ui, apply_advanced_filters, money, one_decimal, header_ui,
@@ -20,10 +21,17 @@ RED  = "#e57373"   # no pagadas
 PURP = "#8e44ad"   # línea promedio GLOBAL
 GRN  = "#2ecc71"
 
-def _metric_card(title: str, value: str, caption: str | None = None) -> str:
+def _metric_card(
+    title: str,
+    value: str,
+    caption: str | None = None,
+    *,
+    tooltip: str | None = None,
+) -> str:
     extra = f'<p class="app-card__subtitle">{caption}</p>' if caption else ""
+    tooltip_attr = f' title="{html.escape(tooltip)}"' if tooltip else ""
     return (
-        '<div class="app-card">'
+        f'<div class="app-card"{tooltip_attr}>'
         f'<div class="app-card__title">{title}</div>'
         f'<div class="app-card__value">{value}</div>'
         f'{extra}'
@@ -158,7 +166,7 @@ prio_local_kpi = st.radio(
 df_kpi = _subset_by_prio(df, prio_local_kpi)
 kpi = compute_kpis(df_kpi)
 
-# ===== Base de pagos contabilizados (para DSO/TFC/TPC y promedios globales) =====
+# ===== Base de pagos contabilizados (para DPP/DIC/DCP y promedios globales) =====
 df_pag_contab = df[(df["estado_pago"] == "pagada") &
                    (pd.to_datetime(df.get("fecha_cc"), errors="coerce").notna())].copy()
 df_kpi_contab = _subset_by_prio(df_pag_contab, prio_local_kpi)
@@ -175,7 +183,7 @@ mean_dso_kpi = float(np.nanmean(dso_kpi)) if dso_kpi.notna().any() else np.nan
 mean_tfc_kpi = float(np.nanmean(tfc_kpi)) if tfc_kpi.notna().any() else np.nan
 mean_tpc_kpi = float(np.nanmean(tpc_kpi)) if tpc_kpi.notna().any() else np.nan
 
-# ====== Gap-1 (solo documentos pagados contabilizados) ======
+# ====== Brecha porcentual (solo documentos pagados contabilizados) ======
 fec_cc_all = pd.to_datetime(df_kpi.get("fecha_cc"), errors="coerce")
 mask_pag = (df_kpi.get("estado_pago") == "pagada")
 mask_cc = fec_cc_all.notna()
@@ -188,17 +196,33 @@ gap1_pct = (contab_pag / fact_pag - 1.0) * 100 if fact_pag > 0 else 0.0
 metric_cards = [
     _metric_card("Monto total facturado", money(kpi["total_facturado"])),
     _metric_card("Total pagado (autorizado)", money(kpi["total_pagado_aut"])),
-    _metric_card("DSO (emision-pago)", f"{one_decimal(mean_dso_kpi)} dias"),
-    _metric_card("TFC (emision-contab.)", f"{one_decimal(mean_tfc_kpi)} dias"),
-    _metric_card("TPC (contab.-pago)", f"{one_decimal(mean_tpc_kpi)} dias"),
-    _metric_card("Gap-1 %", f"{one_decimal(gap1_pct)}%"),
+    _metric_card(
+        LABELS["dpp_emision_pago"],
+        f"{one_decimal(mean_dso_kpi)} días",
+        tooltip=TOOLTIPS["dpp_emision_pago"],
+    ),
+    _metric_card(
+        LABELS["dic_emision_contab"],
+        f"{one_decimal(mean_tfc_kpi)} días",
+        tooltip=TOOLTIPS["dic_emision_contab"],
+    ),
+    _metric_card(
+        LABELS["dcp_contab_pago"],
+        f"{one_decimal(mean_tpc_kpi)} días",
+        tooltip=TOOLTIPS["dcp_contab_pago"],
+    ),
+    _metric_card(
+        LABELS["brecha_porcentaje"],
+        f"{one_decimal(gap1_pct)}%",
+        tooltip=TOOLTIPS["brecha_porcentaje"],
+    ),
 ]
 st.markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>', unsafe_allow_html=True)
 
 st.markdown(
     f"""
     <div class="app-note">
-        <strong>Gap-1 %</strong> = (Contabilizado pagado / Facturado pagado - 1) * 100.
+        <strong>{LABELS["brecha_porcentaje"]}</strong> = (Contabilizado pagado / Facturado pagado - 1) * 100.
         Facturado pagado = {money(fact_pag)} | Contabilizado pagado = {money(contab_pag)}.
     </div>
     """,
@@ -227,10 +251,10 @@ if "cuenta_especial" in df_kpi.columns:
         stats = [
             ("Documentos", f"{len(sub):,}"),
             ("Total pagado", money(k["total_pagado_aut"])),
-            ("DSO", f"{one_decimal(k['dso'])} dias"),
-            ("TFC", f"{one_decimal(k['tfa'])} dias"),
-            ("TPC", f"{one_decimal(k['tpa'])} dias"),
-            ("Gap-1 %", f"{one_decimal(g1)}%"),
+            (LABELS["dpp_emision_pago"], f"{one_decimal(k['dso'])} días"),
+            (LABELS["dic_emision_contab"], f"{one_decimal(k['tfa'])} días"),
+            (LABELS["dcp_contab_pago"], f"{one_decimal(k['tpa'])} días"),
+            (LABELS["brecha_porcentaje"], f"{one_decimal(g1)}%"),
         ]
         segment_cards.append(
             _segment_card(title, money(k["total_facturado"]), stats)
@@ -332,7 +356,7 @@ def _validity_note(series_days: pd.Series, label: str):
         "Los histogramas cuentan solo días ≥ 0; los promedios y agregados monetarios del tablero no se ven afectados."
     )
 
-# DSO ancho completo + contadores + P50/P75/P90
+# DPP ancho completo + contadores + P50/P75/P90
 if dso_loc.notna().any():
     dso_num = pd.to_numeric(dso_loc, errors="coerce")
     _render_range_cards([
@@ -342,12 +366,12 @@ if dso_loc.notna().any():
     ])
 
     fig_dso, _ = _hist_with_two_means(dso_loc, bins_pag, BLUE, max_dias_pag,
-                                      "Emisión → Pago (DSO)",
+                                      f"Emisión → Pago • {LABELS['dpp_emision_pago']}",
                                       mean_global=mean_dso_kpi, mean_local=mean_dso_loc)
     st.plotly_chart(fig_dso, use_container_width=True)
 
     # Nota de validez (N total / usados / excluidos negativos)
-    _validity_note(dso_loc, "DSO (emisión→pago)")
+    _validity_note(dso_loc, LABELS["dpp_emision_pago"])
 
     n_total, n_le, n_gt, p50, p75, p90 = _stats_and_counts(dso_loc, max_dias_pag)
     _render_percentile_cards([
@@ -359,19 +383,19 @@ if dso_loc.notna().any():
         (f"N > {max_dias_pag} d", f"{n_gt:,}", "Documentos"),
     ])
 else:
-    st.info("Sin datos de DSO en pagos contabilizados (con los filtros locales).")
+    st.info("Sin datos de Días Promedio a Pago (DPP) en pagos contabilizados (con los filtros locales).")
 
-# TFC / TPC en 2 columnas (solo P50/P75/P90 y N≤/N>)
+# DIC / DCP en 2 columnas (solo P50/P75/P90 y N≤/N>)
 colA, colB = st.columns(2)
 with colA:
     if tfc_loc.notna().any():
         fig_tfc, _ = _hist_with_two_means(tfc_loc, bins_pag, BLUE, max_dias_pag,
-                                          "Emisión → Contabilización (TFC)",
+                                          f"Emisión → Contabilización • {LABELS['dic_emision_contab']}",
                                           mean_global=mean_tfc_kpi, mean_local=mean_tfc_loc)
         st.plotly_chart(fig_tfc, use_container_width=True)
 
         # Nota de validez
-        _validity_note(tfc_loc, "TFC (emisión→contab.)")
+        _validity_note(tfc_loc, LABELS["dic_emision_contab"])
 
         n_total, n_le, n_gt, p50, p75, p90 = _stats_and_counts(tfc_loc, max_dias_pag)
         _render_percentile_cards([
@@ -383,16 +407,16 @@ with colA:
             (f"N > {max_dias_pag} d", f"{n_gt:,}", "Documentos"),
         ])
     else:
-        st.info("Sin datos de TFC en pagos contabilizados.")
+        st.info("Sin datos de Días a Ingreso Contable (DIC) en pagos contabilizados.")
 with colB:
     if tpc_loc.notna().any():
         fig_tpc, _ = _hist_with_two_means(tpc_loc, bins_pag, BLUE, max_dias_pag,
-                                          "Contabilización → Pago (TPC)",
+                                          f"Contabilización → Pago • {LABELS['dcp_contab_pago']}",
                                           mean_global=mean_tpc_kpi, mean_local=mean_tpc_loc)
         st.plotly_chart(fig_tpc, use_container_width=True)
 
         # Nota de validez
-        _validity_note(tpc_loc, "TPC (contab.→pago)")
+        _validity_note(tpc_loc, LABELS["dcp_contab_pago"])
 
         n_total, n_le, n_gt, p50, p75, p90 = _stats_and_counts(tpc_loc, max_dias_pag)
         _render_percentile_cards([
@@ -404,7 +428,7 @@ with colB:
             (f"N > {max_dias_pag} d", f"{n_gt:,}", "Documentos"),
         ])
     else:
-        st.info("Sin datos de TPC en pagos contabilizados.")
+        st.info("Sin datos de Días desde Contabilización al Pago (DCP) en pagos contabilizados.")
 
 # ===================== NO PAGADAS — tiempos hasta hoy =====================
 st.markdown('<div class="app-separator"></div>', unsafe_allow_html=True)
