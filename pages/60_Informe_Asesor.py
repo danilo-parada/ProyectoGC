@@ -431,6 +431,59 @@ def _apply_local_filters(dfin: pd.DataFrame) -> pd.DataFrame:
         out = out[out["prov_prioritario"] == False]
     return out
 
+
+def _prioritize_documents(dfin: pd.DataFrame, criterio: str) -> pd.DataFrame:
+    out = dfin.copy()
+    if out.empty:
+        return out
+
+    if "dias_a_vencer" in out:
+        dias = pd.to_numeric(out["dias_a_vencer"], errors="coerce")
+        out["dias_a_vencer"] = dias
+        out["vencida_flag"] = dias < 0
+    else:
+        out["dias_a_vencer"] = np.nan
+        out["vencida_flag"] = False
+
+    if "monto_autorizado" in out:
+        monto_aut = pd.to_numeric(out["monto_autorizado"], errors="coerce").fillna(0.0)
+    else:
+        monto_aut = pd.Series(0.0, index=out.index)
+    if "fac_monto_total" in out:
+        monto_fac = pd.to_numeric(out["fac_monto_total"], errors="coerce").fillna(0.0)
+    else:
+        monto_fac = pd.Series(0.0, index=out.index)
+
+    est = out.get("estado_pago")
+    if est is not None:
+        autorizados = est.eq("autorizada_sin_pago")
+    else:
+        autorizados = pd.Series(False, index=out.index)
+
+    out["importe_regla"] = np.where(autorizados, monto_aut, monto_fac)
+    out["importe_regla"] = pd.to_numeric(out["importe_regla"], errors="coerce").fillna(0.0)
+
+    if "Nivel" in out:
+        out["_nivel_rank"] = out["Nivel"].map(
+            {"Doc. Pendiente de Autorización": 0, "Doc. Autorizado p/ Pago": 1}
+        ).fillna(2)
+    else:
+        out["_nivel_rank"] = 2
+
+    if criterio == "Riesgo de aprobación":
+        sort_cols = ["_nivel_rank", "vencida_flag", "dias_a_vencer", "importe_regla"]
+        sort_order = [True, False, True, False]
+    else:
+        sort_cols = ["vencida_flag", "dias_a_vencer", "importe_regla"]
+        sort_order = [False, True, False]
+
+    existing_cols = [c for c in sort_cols if c in out.columns]
+    if existing_cols:
+        asc = [sort_order[sort_cols.index(c)] for c in existing_cols]
+        out = out.sort_values(by=existing_cols, ascending=asc)
+
+    return out
+
 df_nopag_loc = _apply_local_filters(df_nopag)
 
 # KPIs locales
@@ -481,37 +534,65 @@ st.subheader("5) Presupuesto del Día (Selección Automática)")
 
 base = df_nopag_loc.copy()
 
+candidatas_prior = _prioritize_documents(df_nopag, "Riesgo de aprobación")
+
 if "dias_a_vencer" in base.columns:
     base = base[pd.to_numeric(base["dias_a_vencer"], errors="coerce") <= horizonte]
+
+base_keep = [
+    "Nivel","prov_prioritario","cuenta_especial","fac_numero","cmp_nombre","prr_razon_social",
+    "fac_fecha_factura","fecha_venc_30","dias_a_vencer","importe_regla",
+    "cuenta_corriente","banco"
+]
+
+
+def _prep_show(d: pd.DataFrame) -> pd.DataFrame:
+    keep = [c for c in base_keep if c in d.columns]
+    show = d[keep].rename(columns={
+        "prov_prioritario":"Proveedor Prioritario","cuenta_especial":"Cuenta Especial",
+        "fac_numero":"N° Factura","cmp_nombre":"Sede","prr_razon_social":"Proveedor",
+        "fac_fecha_factura":"Fecha Factura","fecha_venc_30":"Fecha Venc.",
+        "dias_a_vencer":"Días a Vencer","importe_regla":"Monto",
+        "cuenta_corriente":"Cuenta Corriente","banco":"Banco"
+    })
+    for col in ("Fecha Factura", "Fecha Venc."):
+        if col in show:
+            fechas = pd.to_datetime(show[col], errors="coerce")
+            show[col] = fechas.dt.strftime("%d-%m-%Y").fillna("s/d")
+    if "Proveedor Prioritario" in show:
+        show["Proveedor Prioritario"] = show["Proveedor Prioritario"].map({True:"Sí", False:"No"})
+    if "Cuenta Especial" in show:
+        show["Cuenta Especial"] = show["Cuenta Especial"].map({True:"Sí", False:"No"})
+    if "Monto" in show:
+        show["Monto"] = pd.to_numeric(show["Monto"], errors="coerce").fillna(0).map(money)
+    return show
+
+
+def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
+    """Mismas columnas que la vista, pero Monto sin formato (numérico)."""
+    keep = [c for c in base_keep if c in d.columns]
+    out = d[keep].rename(columns={
+        "prov_prioritario":"Proveedor Prioritario","cuenta_especial":"Cuenta Especial",
+        "fac_numero":"N° Factura","cmp_nombre":"Sede","prr_razon_social":"Proveedor",
+        "fac_fecha_factura":"Fecha Factura","fecha_venc_30":"Fecha Venc.",
+        "dias_a_vencer":"Días a Vencer","importe_regla":"Monto",
+        "cuenta_corriente":"Cuenta Corriente","banco":"Banco"
+    })
+    if "Proveedor Prioritario" in out:
+        out["Proveedor Prioritario"] = out["Proveedor Prioritario"].map({True:"Sí", False:"No"})
+    if "Cuenta Especial" in out:
+        out["Cuenta Especial"] = out["Cuenta Especial"].map({True:"Sí", False:"No"})
+    if "Monto" in out:
+        out["Monto"] = pd.to_numeric(out["Monto"], errors="coerce").fillna(0.0)
+    return out
+
+
+seleccion = pd.DataFrame()
 
 if base.empty or "importe_deuda" not in base:
     st.info("No hay documentos pendientes para priorizar con los filtros locales.")
 else:
-    base["vencida_flag"] = base["dias_a_vencer"] < 0
-    base["importe_regla"] = np.where(
-        base["estado_pago"].eq("autorizada_sin_pago"),
-        pd.to_numeric(base.get("monto_autorizado", 0.0), errors="coerce").fillna(0.0),
-        pd.to_numeric(base.get("fac_monto_total", 0.0), errors="coerce").fillna(0.0)
-    )
-
-    # --- Ordenamiento según criterio elegido ---
-    base["_nivel_rank"] = base["Nivel"].map(
-        {"Doc. Pendiente de Autorización": 0, "Doc. Autorizado p/ Pago": 1}
-    ).fillna(2)
-
-    # Asegurar que importe_regla sea estrictamente numérico
-    base["importe_regla"] = pd.to_numeric(base["importe_regla"], errors="coerce").fillna(0.0)
-
-    if crit_sel == "Riesgo de aprobación":
-        prior = base.sort_values(
-            by=["_nivel_rank", "vencida_flag", "dias_a_vencer", "importe_regla"],
-            ascending=[True, False, True, False]
-        )
-    else:  # Urgencia de vencimiento
-        prior = base.sort_values(
-            by=["vencida_flag", "dias_a_vencer", "importe_regla"],
-            ascending=[False, True, False]
-        )
+    prior = _prioritize_documents(base, crit_sel)
 
     # Monto por defecto = suma de críticos (<= 0 días)
     total_criticos = float(prior.loc[prior["dias_a_vencer"] <= 0, "importe_regla"].sum())
@@ -535,86 +616,6 @@ else:
     tmp["acum"] = tmp["importe_regla"].cumsum()
     seleccion = tmp[tmp["acum"] <= float(monto_presu)].drop(columns=["acum"])
 
-    base_keep = [
-        "Nivel","prov_prioritario","cuenta_especial","fac_numero","cmp_nombre","prr_razon_social",
-        "fac_fecha_factura","fecha_venc_30","dias_a_vencer","importe_regla",
-        "cuenta_corriente","banco"
-    ]
-
-    def _prep_show(d: pd.DataFrame) -> pd.DataFrame:
-        keep = [c for c in base_keep if c in d.columns]
-        show = d[keep].rename(columns={
-            "prov_prioritario":"Proveedor Prioritario","cuenta_especial":"Cuenta Especial",
-            "fac_numero":"N° Factura","cmp_nombre":"Sede","prr_razon_social":"Proveedor",
-            "fac_fecha_factura":"Fecha Factura","fecha_venc_30":"Fecha Venc.",
-            "dias_a_vencer":"Días a Vencer","importe_regla":"Monto",
-            "cuenta_corriente":"Cuenta Corriente","banco":"Banco"
-        })
-        for col in ("Fecha Factura", "Fecha Venc."):
-            if col in show:
-                fechas = pd.to_datetime(show[col], errors="coerce")
-                show[col] = fechas.dt.strftime("%d-%m-%Y").fillna("s/d")
-        if "Proveedor Prioritario" in show:
-            show["Proveedor Prioritario"] = show["Proveedor Prioritario"].map({True:"Sí", False:"No"})
-        if "Cuenta Especial" in show:
-            show["Cuenta Especial"] = show["Cuenta Especial"].map({True:"Sí", False:"No"})
-        if "Monto" in show:
-            show["Monto"] = pd.to_numeric(show["Monto"], errors="coerce").fillna(0).map(money)
-        return show
-
-    def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
-        """Mismas columnas que la vista, pero Monto sin formato (numérico)."""
-        keep = [c for c in base_keep if c in d.columns]
-        out = d[keep].rename(columns={
-            "prov_prioritario":"Proveedor Prioritario","cuenta_especial":"Cuenta Especial",
-            "fac_numero":"N° Factura","cmp_nombre":"Sede","prr_razon_social":"Proveedor",
-            "fac_fecha_factura":"Fecha Factura","fecha_venc_30":"Fecha Venc.",
-            "dias_a_vencer":"Días a Vencer","importe_regla":"Monto",
-            "cuenta_corriente":"Cuenta Corriente","banco":"Banco"
-        })
-        if "Proveedor Prioritario" in out:
-            out["Proveedor Prioritario"] = out["Proveedor Prioritario"].map({True:"Sí", False:"No"})
-        if "Cuenta Especial" in out:
-            out["Cuenta Especial"] = out["Cuenta Especial"].map({True:"Sí", False:"No"})
-        if "Monto" in out:
-            out["Monto"] = pd.to_numeric(out["Monto"], errors="coerce").fillna(0.0)
-        return out
-
-    tab_candidatas, tab_seleccion = st.tabs([
-        "Candidatas a Pago",
-        "Selección a Pagar Hoy",
-    ])
-
-    candidatas_display = _prep_show(prior)
-    seleccion_display = _prep_show(seleccion)
-
-    with tab_candidatas:
-        st.markdown("**Candidatas a Pago (según criterio elegido)**")
-        style_table(_table_style(candidatas_display), visible_rows=15)
-        st.download_button(
-            "⬇️ Descargar Candidatas",
-            data=excel_bytes_single(_prep_export(prior), "Candidatas"),
-            file_name="candidatas_pago.xlsx",
-            disabled=prior.empty,
-        )
-
-    with tab_seleccion:
-        st.markdown(
-            """
-            <div class="app-note">
-                <strong>Selección a pagar hoy</strong> — bloque crítico de pagos.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        style_table(_table_style(seleccion_display), visible_rows=15)
-        st.download_button(
-            "⬇️ Descargar Selección de Hoy",
-            data=excel_bytes_single(_prep_export(seleccion), "PagoHoy"),
-            file_name="pago_hoy.xlsx",
-            disabled=seleccion.empty,
-        )
-
     # Controles numericos
     suma_sel = float(pd.to_numeric(seleccion.get("importe_regla", pd.Series(dtype=float)), errors="coerce").fillna(0.0).sum())
     resumen_cards = [
@@ -623,6 +624,41 @@ else:
         _card_html("Diferencia", money(float(monto_presu) - suma_sel), subtitle="Presupuesto - seleccion", tag_variant="warning"),
     ]
     _render_cards(resumen_cards)
+
+tab_candidatas, tab_seleccion = st.tabs([
+    "Candidatas a Pago",
+    "Selección a Pagar Hoy",
+])
+
+candidatas_display = _prep_show(candidatas_prior)
+seleccion_display = _prep_show(seleccion)
+
+with tab_candidatas:
+    st.markdown("**Candidatas a Pago (todas las facturas — ordenadas por riesgo de aprobación)**")
+    style_table(_table_style(candidatas_display), visible_rows=15)
+    st.download_button(
+        "⬇️ Descargar Candidatas",
+        data=excel_bytes_single(_prep_export(candidatas_prior), "Candidatas"),
+        file_name="candidatas_pago.xlsx",
+        disabled=candidatas_prior.empty,
+    )
+
+with tab_seleccion:
+    st.markdown(
+        """
+        <div class="app-note">
+            <strong>Selección a pagar hoy</strong> — bloque crítico de pagos.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    style_table(_table_style(seleccion_display), visible_rows=15)
+    st.download_button(
+        "⬇️ Descargar Selección de Hoy",
+        data=excel_bytes_single(_prep_export(seleccion), "PagoHoy"),
+        file_name="pago_hoy.xlsx",
+        disabled=seleccion.empty,
+    )
 
 # =========================================================
 # 6) Reporte PDF
