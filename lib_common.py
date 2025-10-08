@@ -160,10 +160,18 @@ def style_table(
         if visible_rows is not None and visible_rows > 0:
             max_height = header_height + visible_rows * row_height
             extra_style = f"max-height:{max_height}px; overflow-y:auto;"
+        table_html = df.to_html()
+        # Algunas tablas generadas por pandas muestran un literal "<div></div>"
+        # como texto en celdas vacías. Eliminamos esos fragmentos o, en su
+        # defecto, los reemplazamos por un contenedor vacío sin contenido
+        # visible para que no aparezcan en la interfaz.
+        for unwanted in ("&lt;div&gt;&lt;/div&gt;", "<div></div>"):
+            if unwanted in table_html:
+                table_html = table_html.replace(unwanted, "")
         st.markdown(
             f"""
             <div class="styled-table-wrapper" style="{extra_style}">
-                {df.to_html()}
+                {table_html}
             </div>
             """,
             unsafe_allow_html=True,
