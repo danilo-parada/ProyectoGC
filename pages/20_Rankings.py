@@ -249,11 +249,8 @@ def _style_headers(df_disp: Union[pd.DataFrame, Styler]):
 
     return sty
 
-# -------- Explicación de la regla --------
+# -------- Separador --------
 safe_markdown("---")
-st.info("**Nota:** Un proveedor o centro se clasifica como *Prioritario* o *Cuenta Especial* = 'Sí' "
-        "cuando el **50% o más** de sus documentos cumplen con esa condición en el período analizado. "
-        "Las métricas y porcentajes reflejan el estado **actual** según los filtros globales y locales.")
 
 # -------- Top Proveedores --------
 safe_markdown("---")
