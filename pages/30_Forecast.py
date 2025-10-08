@@ -154,15 +154,14 @@ def _render_metric_cards(cards: list[dict[str, str]]):
             foot_block = f"<p class='forecast-card__foot'>{foot_html}</p>"
         else:
             foot_block = ""
-        pieces.append(
-            """
-            <div class="forecast-card">
-                <span class="forecast-card__label">{label}</span>
-                <span class="forecast-card__value">{value}</span>
-                {foot_block}
-            </div>
-            """.format(label=label, value=value, foot_block=foot_block)
+        card_html = (
+            "<div class=\"forecast-card\">"
+            f"<span class=\"forecast-card__label\">{label}</span>"
+            f"<span class=\"forecast-card__value\">{value}</span>"
+            f"{foot_block}"
+            "</div>"
         )
+        pieces.append(card_html)
     pieces.append("</div>")
     st.markdown("".join(pieces), unsafe_allow_html=True)
 
