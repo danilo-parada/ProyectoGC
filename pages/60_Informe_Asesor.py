@@ -724,7 +724,10 @@ else:
             formatted_text = _format_currency_plain(monto_presu)
             if presupuesto_text != formatted_text:
                 st.session_state[budget_input_key] = formatted_text
-                st.experimental_rerun()
+                try:
+                    st.rerun()
+                except AttributeError:
+                    st.experimental_rerun()
         with col_resume:
             st.markdown(
                 f"""
