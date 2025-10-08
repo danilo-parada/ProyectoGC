@@ -80,30 +80,81 @@ if doc_rows > 0:
 else:
     doc_rows = ss.get("_facturas_count", 0)
 
-def build_honorarios_summary(df_hon_enr: pd.DataFrame) -> dict[str, float]:
+def build_honorarios_summary(
+    df_hon_enr: Optional[pd.DataFrame] = None,
+    total_override: Optional[int] = None,
+) -> dict[str, float]:
     """Calcula totales y porcentaje de match bancario para honorarios."""
-    if not isinstance(df_hon_enr, pd.DataFrame) or df_hon_enr.empty:
-        return {}
-    columnas_match = [c for c in ["codigo_contable", "banco", "cuenta_corriente"] if c in df_hon_enr.columns]
-    matched = int(df_hon_enr[columnas_match].notna().all(axis=1).sum()) if columnas_match else 0
-    total = len(df_hon_enr)
-    pct = (matched / total * 100) if total else 0.0
-    return {"total": total, "matched": matched, "pct": pct, "no_match": max(total - matched, 0)}
+    summary: dict[str, float] = {}
+    if isinstance(df_hon_enr, pd.DataFrame) and not df_hon_enr.empty:
+        columnas_match = [
+            c for c in ["codigo_contable", "banco", "cuenta_corriente"] if c in df_hon_enr.columns
+        ]
+        matched = int(df_hon_enr[columnas_match].notna().all(axis=1).sum()) if columnas_match else 0
+        total = len(df_hon_enr)
+        pct = (matched / total * 100) if total else 0.0
+        summary = {
+            "total": total,
+            "matched": matched,
+            "pct": pct,
+            "no_match": max(total - matched, 0),
+        }
+    if total_override is not None:
+        total = int(total_override)
+        matched = int(summary.get("matched", 0))
+        pct = summary.get("pct")
+        if total and pct is None:
+            pct = matched / total * 100
+        summary = {
+            "total": total,
+            "matched": matched,
+            "pct": float(pct or 0.0),
+            "no_match": max(total - matched, 0),
+        }
+    return summary
 
-def build_facturas_summary(match_stats: dict) -> dict[str, object]:
+
+def build_facturas_summary(
+    match_stats: Optional[dict],
+    total_override: Optional[int] = None,
+) -> dict[str, object]:
     """Resume porcentajes y cuentas para facturas normalizadas."""
-    if not isinstance(match_stats, dict) or not match_stats:
-        return {}
-    total = match_stats.get("total", 0)
-    cuenta = match_stats.get("cuenta_especial", {}) or {}
-    prov = match_stats.get("prov_prioritario", {}) or {}
-    return {"total": total, "cuenta": cuenta, "prov": prov}
+    summary: dict[str, object] = {}
+    if isinstance(match_stats, dict) and match_stats:
+        cuenta = match_stats.get("cuenta_especial", {}) or {}
+        prov = match_stats.get("prov_prioritario", {}) or {}
+        summary = {
+            "total": int(match_stats.get("total", 0)),
+            "cuenta": {
+                "si": int(cuenta.get("si", 0)),
+                "no": int(cuenta.get("no", 0)),
+                "pct_si": float(cuenta.get("pct_si", 0.0)),
+            },
+            "prov": {
+                "si": int(prov.get("si", 0)),
+                "no": int(prov.get("no", 0)),
+                "pct_si": float(prov.get("pct_si", 0.0)),
+            },
+        }
+    if total_override is not None:
+        base = summary or {}
+        base_total = int(total_override)
+        summary = {
+            "total": base_total,
+            "cuenta": base.get("cuenta") or {"si": 0, "no": 0, "pct_si": 0.0},
+            "prov": base.get("prov") or {"si": 0, "no": 0, "pct_si": 0.0},
+        }
+    return summary
 
 hon_summary = ss.get("honorarios_summary")
 hon_enr = ss.get("honorarios_enriquecido")
-if not hon_summary and isinstance(hon_enr, pd.DataFrame) and not hon_enr.empty:
+if isinstance(hon_enr, pd.DataFrame) and not hon_enr.empty:
     hon_summary = build_honorarios_summary(hon_enr)
     ss["honorarios_summary"] = hon_summary
+elif hon_rows:
+    if not hon_summary or int(hon_summary.get("total", 0)) != int(hon_rows):
+        hon_summary = build_honorarios_summary(total_override=hon_rows)
+        ss["honorarios_summary"] = hon_summary
 
 fact_summary = ss.get("facturas_summary")
 match_stats = None
@@ -112,12 +163,16 @@ if doc_rows > 0:
         match_stats = get_match_summary()
     except Exception:
         match_stats = None
-    if match_stats:
-        fact_summary = build_facturas_summary(match_stats)
+    total_override = doc_rows or ss.get("_facturas_count", 0)
+    new_summary = build_facturas_summary(match_stats, total_override=total_override)
+    if new_summary:
+        fact_summary = new_summary
         ss["facturas_summary"] = fact_summary
 elif fact_summary is None and ss.get("_match_summary"):
-    fact_summary = build_facturas_summary(ss["_match_summary"])
-    ss["facturas_summary"] = fact_summary
+    total_override = ss.get("_facturas_count", 0)
+    fact_summary = build_facturas_summary(ss["_match_summary"], total_override=total_override)
+    if fact_summary:
+        ss["facturas_summary"] = fact_summary
 
 hon_extras: list[str] = []
 hon_hint = "Registros disponibles"
@@ -162,10 +217,10 @@ elif doc_rows > 0:
 
 card_cta_html = _card_html("Cuentas especiales", cta_rows, cta_rows > 0, "Filas maestras cargadas")
 card_prov_html = _card_html("Proveedores prioritarios", prio_rows, prio_rows > 0, "Filas prioritarias cargadas")
-card_hon_html = _card_html("Honorarios", hon_rows, hon_rows > 0, hon_hint, extras=hon_extras)
-card_fact_html = _card_html("Facturas normalizadas", doc_rows, doc_rows > 0, fact_hint, extras=fact_extras)
+card_hon_html = _card_html("Honorarios", hon_rows, bool(hon_summary), hon_hint, extras=hon_extras)
+card_fact_html = _card_html("Facturas normalizadas", doc_rows, bool(fact_summary), fact_hint, extras=fact_extras)
 
-col_cta, col_prov, col_hon, col_fact = st.columns(4)
+col_cta, col_prov, col_fact, col_hon = st.columns(4)
 
 with col_cta:
     if st.button("Reset cuentas", key="card_reset_cta", use_container_width=True):
@@ -179,17 +234,17 @@ with col_prov:
         _flash_and_rerun("warning", "Proveedores prioritarios eliminados.")
     safe_markdown(card_prov_html)
 
-with col_hon:
-    if st.button("Reset honorarios", key="card_reset_hon", use_container_width=True):
-        reset_honorarios()
-        _flash_and_rerun("warning", "Honorarios eliminados de la sesion.")
-    safe_markdown(card_hon_html)
-
 with col_fact:
     if st.button("Reset facturas", key="card_reset_fact", use_container_width=True):
         reset_docs()
         _flash_and_rerun("warning", "Facturas eliminadas de la sesion actual.")
     safe_markdown(card_fact_html)
+
+with col_hon:
+    if st.button("Reset honorarios", key="card_reset_hon", use_container_width=True):
+        reset_honorarios()
+        _flash_and_rerun("warning", "Honorarios eliminados de la sesion.")
+    safe_markdown(card_hon_html)
 
 flash_payload = ss.pop("_ui_flash", None)
 if flash_payload:
@@ -197,11 +252,11 @@ if flash_payload:
     notifier = getattr(st, level, st.info)
     notifier(message)
 
-tab_cta, tab_prov, tab_hon, tab_fact = st.tabs([
+tab_cta, tab_prov, tab_fact, tab_hon = st.tabs([
     "1. Cuentas especiales",
     "2. Proveedores prioritarios",
-    "3. Honorarios",
-    "4. Facturas",
+    "3. Facturas",
+    "4. Honorarios",
 ])
 
 with tab_cta:
@@ -266,8 +321,66 @@ with tab_prov:
         if isinstance(ss.get("df_prio_raw"), pd.DataFrame):
             style_table(sanitize_df(ss["df_prio_raw"].head(200)))
 
+with tab_fact:
+    st.markdown("#### 3. Facturas")
+    safe_markdown(
+        """
+        <div class="app-note">
+            Carga uno o varios archivos y luego mapea columnas para habilitar todos los tableros.
+        </div>
+        """,
+    )
+
+    files = st.file_uploader(
+        "Sube facturas (xlsx/csv)",
+        type=["xlsx", "xls", "csv"],
+        accept_multiple_files=True,
+        key="upload_docs",
+    )
+
+    if files:
+        try:
+            df_list = [read_any(f) for f in files]
+            df_raw = pd.concat(df_list, ignore_index=True)
+            ss["df_raw"] = df_raw
+            st.success(f"Facturas cargadas: {len(df_raw):,} filas en total.")
+
+            col_map, ok = mapping_ui(df_raw.columns)
+            ss["col_map"] = col_map
+
+            dedup_flag = st.checkbox(
+                "Evitar duplicados exactos (activa si subiste el mismo archivo)",
+                value=False,
+            )
+
+            if st.button("Aplicar mapeo y normalizacion", type="primary"):
+                if not ok:
+                    st.error("Falta asignar fac_fecha_factura en el mapeo. Corrige y vuelve a intentar.")
+                else:
+                    df_norm = apply_mapping(df_raw, col_map)
+                    register_documents(df_norm, dedup=dedup_flag)
+                    ss["_facturas_count"] = len(df_norm)
+                    match_payload = None
+                    try:
+                        match_payload = get_match_summary()
+                    except Exception:
+                        match_payload = None
+                    ss["facturas_summary"] = build_facturas_summary(
+                        match_payload, total_override=len(df_norm)
+                    )
+                    _flash_and_rerun(
+                        "success",
+                        f"Base normalizada, deduplicada y con banderas de prioridad/cuenta especial ({len(df_norm):,} facturas).",
+                    )
+        except Exception as e:
+            st.error(f"Error durante la carga o normalizacion: {e}")
+
+    with st.expander("Base normalizada (vista previa 200 filas)", expanded=False):
+        if isinstance(ss.get("df"), pd.DataFrame):
+            style_table(sanitize_df(ss["df"].head(200)))
+
 with tab_hon:
-    st.markdown("#### 3. Honorarios (opcional)")
+    st.markdown("#### 4. Honorarios (opcional)")
     safe_markdown(
         """
         <div class="app-note">
@@ -304,7 +417,7 @@ with tab_hon:
                 hon_actual = df_hon_norm
                 ss["honorarios"] = df_hon_norm
                 ss["honorarios_enriquecido"] = None
-                ss["honorarios_summary"] = None
+                ss["honorarios_summary"] = build_honorarios_summary(total_override=len(df_hon_norm))
         except Exception as e:
             st.error(f"No se pudo leer el archivo de honorarios: {e}")
 
@@ -372,60 +485,6 @@ with tab_hon:
         df_hon_norm = ss.get("honorarios")
         if isinstance(df_hon_norm, pd.DataFrame) and not df_hon_norm.empty:
             style_table(sanitize_df(df_hon_norm.head(200)))
-
-with tab_fact:
-    st.markdown("#### 4. Facturas")
-    safe_markdown(
-        """
-        <div class="app-note">
-            Carga uno o varios archivos y luego mapea columnas para habilitar todos los tableros.
-        </div>
-        """,
-    )
-
-    files = st.file_uploader(
-        "Sube facturas (xlsx/csv)",
-        type=["xlsx", "xls", "csv"],
-        accept_multiple_files=True,
-        key="upload_docs",
-    )
-
-    if files:
-        try:
-            df_list = [read_any(f) for f in files]
-            df_raw = pd.concat(df_list, ignore_index=True)
-            ss["df_raw"] = df_raw
-            st.success(f"Facturas cargadas: {len(df_raw):,} filas en total.")
-
-            col_map, ok = mapping_ui(df_raw.columns)
-            ss["col_map"] = col_map
-
-            dedup_flag = st.checkbox(
-                "Evitar duplicados exactos (activa si subiste el mismo archivo)",
-                value=False,
-            )
-
-            if st.button("Aplicar mapeo y normalizacion", type="primary"):
-                if not ok:
-                    st.error("Falta asignar fac_fecha_factura en el mapeo. Corrige y vuelve a intentar.")
-                else:
-                    df_norm = apply_mapping(df_raw, col_map)
-                    register_documents(df_norm, dedup=dedup_flag)
-                    ss["_facturas_count"] = len(df_norm)
-                    try:
-                        ss["facturas_summary"] = build_facturas_summary(get_match_summary())
-                    except Exception:
-                        pass
-                    _flash_and_rerun(
-                        "success",
-                        f"Base normalizada, deduplicada y con banderas de prioridad/cuenta especial ({len(df_norm):,} facturas).",
-                    )
-        except Exception as e:
-            st.error(f"Error durante la carga o normalizacion: {e}")
-
-    with st.expander("Base normalizada (vista previa 200 filas)", expanded=False):
-        if isinstance(ss.get("df"), pd.DataFrame):
-            style_table(sanitize_df(ss["df"].head(200)))
 
 safe_markdown('<div class="app-separator"></div>')
 
