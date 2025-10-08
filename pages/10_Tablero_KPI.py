@@ -170,12 +170,19 @@ common_filters = {
     "cc": cc,
     "oc": oc,
     "est": est,
-    "estado_doc": estado_doc_value,
+    "estado_doc": None,
     "prio": [],
 }
 
-df_filtered_common = apply_common_filters(df0, common_filters)
-df = df_filtered_common
+df_common_no_estado = apply_common_filters(df0, common_filters).copy()
+df_filtered_common = df_common_no_estado
+if estado_doc_value and "estado_doc" in df_filtered_common.columns:
+    estado_norm = df_filtered_common["estado_doc"].astype(str)
+    df_filtered_common = df_filtered_common[estado_norm == str(estado_doc_value)].copy()
+else:
+    df_filtered_common = df_filtered_common.copy()
+
+df = df_common_no_estado
 
 # Particiones útiles
 df_pag     = df[df["estado_pago"] == "pagada"].copy()

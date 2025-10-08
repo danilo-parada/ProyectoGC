@@ -209,21 +209,23 @@ common_filters = {
     "cc": cc,
     "oc": oc,
     "est": est,
-    "estado_doc": estado_doc_value,
+    "estado_doc": None,
     "prio": [],
 }
 
-df_filtered_common = apply_common_filters(df0, common_filters)
-df = df_filtered_common
+df_common_no_estado = apply_common_filters(df0, common_filters).copy()
+df_filtered_common = df_common_no_estado
+if estado_doc_value and "estado_doc" in df_filtered_common.columns:
+    estado_norm = df_filtered_common["estado_doc"].astype(str)
+    df_filtered_common = df_filtered_common[estado_norm == str(estado_doc_value)].copy()
+else:
+    df_filtered_common = df_filtered_common.copy()
 
-common_filters_no_estado = {**common_filters, "estado_doc": None}
-df_filtered_common_no_estado = apply_common_filters(df0, common_filters_no_estado)
+df = df_common_no_estado
 
-df_pag = df[df["estado_pago"] == "pagada"].copy()
+df_pag = df_filtered_common[df_filtered_common["estado_pago"] == "pagada"].copy()
 
-df_nopag_all = df_filtered_common_no_estado[
-    df_filtered_common_no_estado["estado_pago"] != "pagada"
-].copy()
+df_nopag_all = df[df["estado_pago"] != "pagada"].copy()
 
 TODAY = pd.Timestamp(date.today()).normalize()
 
