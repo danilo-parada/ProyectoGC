@@ -28,7 +28,7 @@ TOOLTIPS: Dict[str, str] = _SafeLookup(
         "dic_emision_contab": "Promedio de días entre emisión y registro contable.",
         "dcp_contab_pago": "Promedio de días entre contabilización y pago.",
         "total_facturado": "Incluye todo el monto facturado del periodo, incluso facturas aún sin pago.",
-        "total_pagado_real": "Se calcula con `monto_ce` en documentos pagados (fecha_ce o monto_ce > 0).",
+        "total_pagado_real": "Suma `monto_pagado_real`: prioriza monto autorizado con fecha de pago, luego monto pagado registrado.",
         "desglose_facturado": "Comparativo del monto facturado entre documentos pagados y pendientes.",
     }
 )
