@@ -9,6 +9,45 @@ import pandas as pd
 
 from lib_common import apply_advanced_filters
 
+
+def compute_monto_pagado_real(df: pd.DataFrame) -> pd.Series:
+    f = df.copy()
+    index = f.index
+
+    a_raw = f.get("monto_autorizado")
+    if isinstance(a_raw, pd.Series):
+        a = pd.to_numeric(a_raw, errors="coerce")
+    else:
+        a = pd.Series(a_raw, index=index)
+        a = pd.to_numeric(a, errors="coerce")
+
+    p_raw = f.get("monto_pagado")
+    if isinstance(p_raw, pd.Series):
+        p = pd.to_numeric(p_raw, errors="coerce")
+    else:
+        p = pd.Series(p_raw, index=index)
+        p = pd.to_numeric(p, errors="coerce")
+
+    fecha_raw = f.get("fecha_pagado")
+    if isinstance(fecha_raw, pd.Series):
+        fecha = pd.to_datetime(fecha_raw, errors="coerce")
+    else:
+        fecha = pd.Series(fecha_raw, index=index)
+        fecha = pd.to_datetime(fecha, errors="coerce")
+
+    p = p.fillna(0)
+    a = a.fillna(np.nan)
+
+    cond1 = fecha.notna() & (p > 0)
+    cond2 = fecha.notna() & (p <= 0) & (a.fillna(0) > 0)
+    cond3 = fecha.isna() & (p > 0)
+
+    out = pd.Series(0.0, index=index, dtype="float64")
+    out.loc[cond1] = a.where(a.notna(), p).loc[cond1]
+    out.loc[cond2] = a.fillna(0).loc[cond2]
+    out.loc[cond3] = p.loc[cond3]
+    return out.clip(lower=0)
+
 def _safe_to_numeric(s: pd.Series, default: float = 0.0) -> pd.Series:
     try:
         out = pd.to_numeric(s, errors="coerce")
@@ -278,30 +317,28 @@ def compute_kpis(df: pd.DataFrame) -> Dict[str, float]:
 
     data = df.copy()
 
+    data["monto_pagado_real"] = compute_monto_pagado_real(data)
     data["monto_facturado"] = _sanitize_monto(
         data.get("monto_facturado", data.get("fac_monto_total", 0.0))
     )
-    data["monto_ce"] = _sanitize_monto(data.get("monto_ce", data.get("monto_pagado", 0.0)))
-    data["fecha_emision"] = _sanitize_datetime(data.get("fecha_emision", data.get("fac_fecha_factura")))
-    data["fecha_ce"] = _sanitize_datetime(data.get("fecha_ce", data.get("fecha_pagado")))
-    data["fecha_contab"] = _sanitize_datetime(data.get("fecha_contabilizacion", data.get("fecha_cc")))
 
-    pagadas_mask = _derive_pagadas(data)
-    data["is_pagada"] = pagadas_mask
+    data["fecha_emision"] = _sanitize_datetime(data.get("fecha_emision", data.get("fac_fecha_factura")))
+    data["fecha_contab"] = _sanitize_datetime(data.get("fecha_contabilizacion", data.get("fecha_cc")))
+    data["fecha_pagado"] = _sanitize_datetime(data.get("fecha_pagado"))
+
+    pagadas_monto = data["monto_pagado_real"] > 0
 
     total_facturado = float(data["monto_facturado"].sum())
-    total_pagado_real = float(data.loc[pagadas_mask, "monto_ce"].fillna(0.0).sum())
-    facturado_pagado = float(data.loc[pagadas_mask, "monto_facturado"].sum())
-    facturado_sin_pagar = float(data.loc[~pagadas_mask, "monto_facturado"].sum())
-
-    used_cols = {"monto_facturado", "monto_ce"}
-    assert "monto_pago" not in {c.lower() for c in used_cols}, "Las agregaciones no deben utilizar 'monto_pago'."
+    total_pagado_real = float(data["monto_pagado_real"].sum())
+    facturado_pagado = float(data.loc[pagadas_monto, "monto_facturado"].sum())
+    facturado_sin_pagar = float(data.loc[~pagadas_monto, "monto_facturado"].sum())
 
     brecha_pct = 100.0 * (total_pagado_real - total_facturado) / max(total_facturado, 1.0)
 
-    dpp = _mean_days_clip(data, "fecha_emision", "fecha_ce", mask=pagadas_mask)
+    pagadas_fecha = data["fecha_pagado"].notna()
+    dpp = _mean_days_clip(data, "fecha_emision", "fecha_pagado", mask=pagadas_fecha)
     dic = _mean_days_clip(data, "fecha_emision", "fecha_contab")
-    dcp = _mean_days_clip(data, "fecha_contab", "fecha_ce")
+    dcp = _mean_days_clip(data, "fecha_contab", "fecha_pagado", mask=pagadas_fecha)
 
     if abs((facturado_pagado + facturado_sin_pagar) - total_facturado) > 0.51:
         logging.getLogger(__name__).warning("Desbalance en desglose de facturación detectado durante compute_kpis")
@@ -317,7 +354,7 @@ def compute_kpis(df: pd.DataFrame) -> Dict[str, float]:
         "dcp": dcp,
         "brecha_pct": brecha_pct,
         "docs_total": float(len(data)),
-        "docs_pagados": float(pagadas_mask.sum()),
+        "docs_pagados": float(pagadas_monto.sum()),
     }
 
 def prepare_hist_data(df: pd.DataFrame, column: str, max_days: int = 100) -> pd.DataFrame:
