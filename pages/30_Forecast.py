@@ -434,7 +434,7 @@ if clip_fc or clip_ci:
     _render_note("Se recortó en 0 el forecast o el límite inferior por la naturaleza de los pagos.")
 
 # ------------------------ resumen + explicación (GENERAL) ------------------------ #
-st.subheader("4. Resumen Numérico del Pronóstico")
+st.subheader("4. Resultados del Forecast — General")
 avg_hist = float(y.mean())
 avg_fc = float(np.mean(fc_plot["forecast"].values))
 var_pct = ((avg_fc - avg_hist) / avg_hist) * 100 if avg_hist > 0 else 0.0
@@ -470,7 +470,6 @@ cards_general = [
     },
     _mape_card(mape, thr_exc, thr_good, thr_ok),
 ]
-_render_metric_cards(cards_general)
 
 fc_display = fc_plot.copy()
 fc_display["fecha_g"] = pd.to_datetime(fc_display["fecha_g"])
@@ -492,6 +491,9 @@ export_general = display_general.rename(columns={"Valor Estimado": "Valor_Estima
 if "IC Bajo" in export_general.columns:
     export_general = export_general.rename(columns={"IC Bajo": "IC_Bajo", "IC Alto": "IC_Alto"})
 _excel_download(export_general, "Forecast_General", "forecast_general.xlsx")
+
+st.markdown("#### Indicadores del Forecast General")
+_render_metric_cards(cards_general)
 
 with st.expander("¿Cómo leer este bloque? (General)"):
     _metrics_explainer_block("General", thr_exc, thr_good, thr_ok)
@@ -595,7 +597,7 @@ else:
         )
         _excel_download(export_ce, "Forecast_CE", "forecast_cuentas_especiales.xlsx")
 
-    st.markdown("#### Resumen Numérico — Cuentas Especiales")
+    st.markdown("#### Indicadores del Forecast — Cuentas Especiales")
     avg_hist_ce = float(ts_ce.mean())
     avg_fc_ce = float(np.mean(yhat_out_ce))
     var_pct_ce = ((avg_fc_ce - avg_hist_ce) / avg_hist_ce) * 100 if avg_hist_ce > 0 else 0.0
@@ -729,7 +731,7 @@ else:
         )
         _excel_download(export_ne, "Forecast_NoCE", "forecast_cuentas_no_especiales.xlsx")
 
-    st.markdown("#### Resumen Numérico — Cuentas No Especiales")
+    st.markdown("#### Indicadores del Forecast — Cuentas No Especiales")
     avg_hist_ne = float(ts_ne.mean())
     avg_fc_ne = float(np.mean(yhat_out_ne))
     var_pct_ne = ((avg_fc_ne - avg_hist_ne) / avg_hist_ne) * 100 if avg_hist_ne > 0 else 0.0
