@@ -33,6 +33,75 @@ TABLE_HOVER_BG = "#e0e8ff"
 TABLE_FONT_SIZE = "var(--app-table-font-size)"
 TABLE_ROW_PADDING = "16px 22px"
 
+_BUDGET_PANEL_STYLE = """
+<style>
+.budget-panel {
+    background: var(--app-surface, #ffffff);
+    border-radius: 18px;
+    padding: 1.75rem 1.75rem 1.4rem;
+    margin-bottom: 1.2rem;
+    border: 1px solid rgba(64, 86, 179, 0.18);
+    box-shadow: 0 18px 45px rgba(26, 43, 90, 0.12);
+}
+.budget-panel__title {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: #1f2a55;
+    letter-spacing: 0.01em;
+}
+.budget-panel__subtitle {
+    font-size: 0.95rem;
+    color: #5b6b95;
+    margin-top: 0.35rem;
+}
+.budget-panel__input-wrapper {
+    margin-top: 1.25rem;
+}
+.budget-panel input[type="text"] {
+    font-size: 1.7rem !important;
+    font-weight: 600;
+    padding: 0.95rem 1.1rem !important;
+    border-radius: 16px !important;
+    border: 1px solid #c5ceff !important;
+    color: #1f2a55 !important;
+    box-shadow: inset 0 1px 2px rgba(19, 34, 88, 0.08) !important;
+}
+.budget-panel__resume {
+    background: linear-gradient(135deg, #f4f7ff 0%, #ecf1ff 100%);
+    border-radius: 16px;
+    padding: 1rem 1.4rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.35rem;
+    text-align: right;
+}
+.budget-panel__resume-label {
+    font-size: 0.85rem;
+    color: #4a5a82;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.budget-panel__resume-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1f2a55;
+}
+.budget-panel__helper {
+    font-size: 0.85rem;
+    color: #667399;
+    margin-top: 0.6rem;
+}
+@media (max-width: 992px) {
+    .budget-panel__resume {
+        margin-top: 1rem;
+        text-align: left;
+    }
+}
+</style>
+"""
+
 
 def _table_style(df_disp: pd.DataFrame | pd.io.formats.style.Styler):
     """Aplica el estilo de tablas usado en Rankings para tablas estáticas."""
@@ -194,6 +263,27 @@ def _fmt_days(val: float) -> str:
 
 def _fmt_pct(val: float) -> str:
     return "s/d" if pd.isna(val) else f"{one_decimal(val)}%"
+
+
+def _format_currency_plain(val: float) -> str:
+    try:
+        return money(float(val)).replace("$", "").strip()
+    except Exception:
+        return str(val)
+
+
+def _parse_currency_input(text: str, fallback: float) -> float:
+    if not isinstance(text, str):
+        return float(fallback)
+    cleaned = text.strip()
+    if not cleaned:
+        return float(fallback)
+    cleaned = cleaned.replace("$", "").replace(" ", "")
+    cleaned = cleaned.replace(".", "").replace(",", ".")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return float(fallback)
 
 # =========================================================
 # 1) KPIs
@@ -409,15 +499,18 @@ def _update_presupuesto_session_state(filters: dict[str, str], default_value: fl
     """Sincroniza el monto disponible con los filtros locales cuando cambian."""
 
     stored_filters = st.session_state.get(_LOCAL_FILTER_STATE_KEY)
+    text_key = f"{_LOCAL_AMOUNT_KEY}__text"
 
     if stored_filters is None:
         st.session_state[_LOCAL_FILTER_STATE_KEY] = filters
         st.session_state[_LOCAL_AMOUNT_KEY] = float(default_value)
+        st.session_state[text_key] = _format_currency_plain(default_value)
         return
 
     if stored_filters != filters:
         st.session_state[_LOCAL_FILTER_STATE_KEY] = filters
         st.session_state[_LOCAL_AMOUNT_KEY] = float(default_value)
+        st.session_state[text_key] = _format_currency_plain(default_value)
 
 def _apply_local_filters(dfin: pd.DataFrame) -> pd.DataFrame:
     out = dfin.copy()
@@ -601,14 +694,55 @@ else:
     local_filters = {"ce": ce_local, "prio": prio_local, "crit": crit_sel}
     _update_presupuesto_session_state(local_filters, float(default_presu))
 
-    monto_presu = st.number_input(
-        "Monto disponible hoy",
-        min_value=0.0,
-        value=float(st.session_state.get(_LOCAL_AMOUNT_KEY, default_presu)),
-        step=1000.0,        # puedes subirlo si quieres saltos mayores
-        format="%.0f",      # << permite ingresar 100000000 sin truncados
-        key=_LOCAL_AMOUNT_KEY
-    )
+    current_amount = float(st.session_state.get(_LOCAL_AMOUNT_KEY, default_presu))
+    budget_input_key = f"{_LOCAL_AMOUNT_KEY}__text"
+    if budget_input_key not in st.session_state:
+        st.session_state[budget_input_key] = _format_currency_plain(current_amount)
+
+    st.markdown(_BUDGET_PANEL_STYLE, unsafe_allow_html=True)
+
+    with st.container():
+        st.markdown(
+            """
+            <div class="budget-panel">
+                <div class="budget-panel__title">Monto disponible hoy</div>
+                <div class="budget-panel__subtitle">Define tu presupuesto diario considerando cuentas críticas y prioridades.</div>
+                <div class="budget-panel__input-wrapper">
+            """,
+            unsafe_allow_html=True,
+        )
+        col_input, col_resume = st.columns([2.5, 1.5])
+        with col_input:
+            presupuesto_text = st.text_input(
+                "Monto disponible hoy",
+                value=st.session_state[budget_input_key],
+                key=budget_input_key,
+                label_visibility="collapsed",
+                help="Ingresa el monto en CLP. Puedes usar puntos o comas como separador de miles/decimales.",
+            )
+            monto_presu = float(round(_parse_currency_input(presupuesto_text, current_amount)))
+            st.session_state[_LOCAL_AMOUNT_KEY] = monto_presu
+            formatted_text = _format_currency_plain(monto_presu)
+            if formatted_text != st.session_state[budget_input_key]:
+                st.session_state[budget_input_key] = formatted_text
+        with col_resume:
+            st.markdown(
+                f"""
+                <div class=\"budget-panel__resume\">
+                    <span class=\"budget-panel__resume-label\">Equivale a</span>
+                    <span class=\"budget-panel__resume-value\">{money(monto_presu)}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        st.markdown(
+            """
+                </div>
+                <div class="budget-panel__helper">El valor se guarda automáticamente para esta sesión y se utilizará en el reporte PDF.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
     # Selección por presupuesto (corte por acumulado)
@@ -618,11 +752,38 @@ else:
 
     # Controles numericos
     suma_sel = float(pd.to_numeric(seleccion.get("importe_regla", pd.Series(dtype=float)), errors="coerce").fillna(0.0).sum())
+    restante_raw = float(monto_presu) - suma_sel
+    restante = max(0.0, restante_raw)
     resumen_cards = [
         _card_html("Presupuesto ingresado", money(float(monto_presu)), subtitle="Disponible hoy", tone="accent"),
-        _card_html("Suma seleccion", money(suma_sel), subtitle="Total comprometido"),
-        _card_html("Diferencia", money(float(monto_presu) - suma_sel), subtitle="Presupuesto - seleccion", tag_variant="warning"),
+        _card_html("Suma selección", money(suma_sel), subtitle="Total comprometido"),
+        _card_html("Saldo sin asignar", money(restante), subtitle="Presupuesto - selección", tag_variant="warning"),
     ]
+
+    siguiente = tmp[tmp["acum"] > float(monto_presu)].head(1)
+    if not siguiente.empty:
+        siguiente_row = siguiente.iloc[0]
+        next_amount = float(pd.to_numeric(siguiente_row.get("importe_regla"), errors="coerce"))
+        prov_val = siguiente_row.get("prr_razon_social") or siguiente_row.get("Proveedor")
+        prov = str(prov_val) if pd.notna(prov_val) else "Proveedor sin identificar"
+        doc_val = siguiente_row.get("fac_numero") or siguiente_row.get("doc_numero") or siguiente_row.get("doc_id")
+        doc = str(doc_val) if pd.notna(doc_val) else "s/d"
+        adicional = max(0.0, next_amount - restante)
+        resumen_cards.append(
+            _card_html(
+                "Próxima factura a incorporar",
+                money(next_amount),
+                subtitle=f"{prov} — Factura {doc}",
+                tag=f"Faltan {money(adicional)}" if adicional > 0 else "Disponible",
+                tag_variant="warning" if adicional > 0 else "success",
+                tone="accent",
+                stats=[
+                    ("Saldo libre actual", money(restante)),
+                    ("Ajuste necesario", money(adicional)),
+                ],
+                compact=False,
+            )
+        )
     _render_cards(resumen_cards)
 
 tab_candidatas, tab_seleccion = st.tabs([
