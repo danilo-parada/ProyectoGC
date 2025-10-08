@@ -9,11 +9,11 @@ import streamlit as st
 
 from core.utils import LABELS, TOOLTIPS
 from lib_common import (
-    get_df_norm, general_date_filters_ui, apply_general_filters,
-    advanced_filters_ui, apply_advanced_filters, money, one_decimal, header_ui,
+    get_df_norm, general_date_filters_ui,
+    advanced_filters_ui, money, one_decimal, header_ui,
     ESTADO_LABEL, sanitize_df, safe_markdown
 )
-from lib_metrics import ensure_derived_fields, compute_kpis
+from lib_metrics import ensure_derived_fields, compute_kpis, apply_common_filters
 from lib_report import excel_bytes_multi
 
 BLUE = "#1f77b4"   # pagadas
@@ -135,8 +135,20 @@ df0 = ensure_derived_fields(df0)
 fac_ini, fac_fin, pay_ini, pay_fin = general_date_filters_ui(df0)
 sede, org, prov, cc, oc, est, _prio_removed = advanced_filters_ui(df0)
 
-df = apply_general_filters(df0, fac_ini, fac_fin, pay_ini, pay_fin)
-df = apply_advanced_filters(df, sede, org, prov, cc, oc, est, [])
+common_filters = {
+    "fac_range": (fac_ini, fac_fin),
+    "pay_range": (pay_ini, pay_fin),
+    "sede": sede,
+    "org": org,
+    "prov": prov,
+    "cc": cc,
+    "oc": oc,
+    "est": est,
+    "prio": [],
+}
+
+df_filtered_common = apply_common_filters(df0, common_filters)
+df = df_filtered_common
 
 # Particiones útiles
 df_pag     = df[df["estado_pago"] == "pagada"].copy()
@@ -145,72 +157,49 @@ df_no_pag  = df[df["estado_pago"] != "pagada"].copy()
 # ===================== KPIs principales =====================
 st.subheader("Metricas principales del periodo")
 
-def _subset_by_prio(dfin: pd.DataFrame, choice: str) -> pd.DataFrame:
-    if "prov_prioritario" not in dfin.columns:
-        return dfin
-    if choice == "Prioritario":
-        return dfin[dfin["prov_prioritario"] == True]
-    if choice == "No Prioritario":
-        return dfin[dfin["prov_prioritario"] == False]
-    return dfin
-
-prio_local_kpi = st.radio(
-    "Filtrar prioritario (solo para estos indicadores)",
-    ["Todos", "Prioritario", "No Prioritario"],
-    horizontal=True, index=0
-)
-
-df_kpi = _subset_by_prio(df, prio_local_kpi)
-kpi = compute_kpis(df_kpi)
+kpi = compute_kpis(df_filtered_common)
 
 # ===== Base de pagos contabilizados (para DPP/DIC/DCP y promedios globales) =====
 df_pag_contab = df[(df["estado_pago"] == "pagada") &
                    (pd.to_datetime(df.get("fecha_cc"), errors="coerce").notna())].copy()
-df_kpi_contab = _subset_by_prio(df_pag_contab, prio_local_kpi)
 
-fac_k = pd.to_datetime(df_kpi_contab.get("fac_fecha_factura"), errors="coerce")
-cc_k = pd.to_datetime(df_kpi_contab.get("fecha_cc"), errors="coerce")
-pago_k = pd.to_datetime(df_kpi_contab.get("fecha_pagado"), errors="coerce")
+mean_dso_kpi = kpi["dpp"]
+mean_tfc_kpi = kpi["dic"]
+mean_tpc_kpi = kpi["dcp"]
 
-dso_kpi = (pago_k - fac_k).dt.days     # emision -> pago
-tfc_kpi = (cc_k - fac_k).dt.days       # emision -> contabilizacion
-tpc_kpi = (pago_k - cc_k).dt.days      # contabilizacion -> pago
+def _fmt_days_metric(value: float) -> str:
+    return "s/d" if pd.isna(value) else f"{one_decimal(value)} días"
 
-mean_dso_kpi = float(np.nanmean(dso_kpi)) if dso_kpi.notna().any() else np.nan
-mean_tfc_kpi = float(np.nanmean(tfc_kpi)) if tfc_kpi.notna().any() else np.nan
-mean_tpc_kpi = float(np.nanmean(tpc_kpi)) if tpc_kpi.notna().any() else np.nan
-
-# ====== Brecha porcentual (solo documentos pagados contabilizados) ======
-fec_cc_all = pd.to_datetime(df_kpi.get("fecha_cc"), errors="coerce")
-mask_pag = (df_kpi.get("estado_pago") == "pagada")
-mask_cc = fec_cc_all.notna()
-mask_base = mask_pag & mask_cc  # pagos contabilizados
-
-fact_pag = pd.to_numeric(df_kpi.get("fac_monto_total", 0.0), errors="coerce").where(mask_base, other=0.0).sum()
-contab_pag = pd.to_numeric(df_kpi.get("monto_autorizado", 0.0), errors="coerce").where(mask_base, other=0.0).sum()
-gap1_pct = (contab_pag / fact_pag - 1.0) * 100 if fact_pag > 0 else 0.0
 
 metric_cards = [
-    _metric_card("Monto total facturado", money(kpi["total_facturado"])),
-    _metric_card("Total pagado (autorizado)", money(kpi["total_pagado_aut"])),
+    _metric_card(
+        "Monto total facturado",
+        money(kpi["total_facturado"]),
+        caption=f"Base: {int(kpi['docs_total']):,} doc.",
+    ),
+    _metric_card(
+        "Total pagado",
+        money(kpi["total_pagado"]),
+        caption=f"Pagadas: {int(kpi['docs_pagados']):,}",
+    ),
     _metric_card(
         LABELS["dpp_emision_pago"],
-        f"{one_decimal(mean_dso_kpi)} días",
+        _fmt_days_metric(mean_dso_kpi),
         tooltip=TOOLTIPS["dpp_emision_pago"],
     ),
     _metric_card(
         LABELS["dic_emision_contab"],
-        f"{one_decimal(mean_tfc_kpi)} días",
+        _fmt_days_metric(mean_tfc_kpi),
         tooltip=TOOLTIPS["dic_emision_contab"],
     ),
     _metric_card(
         LABELS["dcp_contab_pago"],
-        f"{one_decimal(mean_tpc_kpi)} días",
+        _fmt_days_metric(mean_tpc_kpi),
         tooltip=TOOLTIPS["dcp_contab_pago"],
     ),
     _metric_card(
         LABELS["brecha_porcentaje"],
-        f"{one_decimal(gap1_pct)}%",
+        f"{one_decimal(kpi['brecha_pct'])}%",
         tooltip=TOOLTIPS["brecha_porcentaje"],
     ),
 ]
@@ -219,38 +208,32 @@ safe_markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>')
 safe_markdown(
     f"""
     <div class="app-note">
-        <strong>{LABELS["brecha_porcentaje"]}</strong> = (Contabilizado pagado / Facturado pagado - 1) * 100.
-        Facturado pagado = {money(fact_pag)} | Contabilizado pagado = {money(contab_pag)}.
+        <strong>{LABELS["brecha_porcentaje"]}</strong> = 100 × (Total pagado − Total facturado) / max(Total facturado, 1).
+        Total facturado = {money(kpi['total_facturado'])} • Total pagado = {money(kpi['total_pagado'])}.
     </div>
     """,
 )
 
 # ====== KPIs por cuenta especial (Si/No) ======
-if "cuenta_especial" in df_kpi.columns:
+if "cuenta_especial" in df_filtered_common.columns:
     safe_markdown('<div class="app-separator"></div>')
     st.markdown("### Metricas por cuenta especial")
 
-    ce_mask_all = _coerce_bool_series(df_kpi["cuenta_especial"])
+    ce_mask_all = _coerce_bool_series(df_filtered_common["cuenta_especial"])
     segment_cards: list[str] = []
     for flag, title in [(True, "Cuenta especial: si"), (False, "Cuenta especial: no")]:
-        sub = df_kpi[ce_mask_all] if flag else df_kpi[~ce_mask_all]
+        sub = df_filtered_common[ce_mask_all] if flag else df_filtered_common[~ce_mask_all]
         if sub.empty:
             continue
         k = compute_kpis(sub)
-        mask_seg = (sub.get("estado_pago") == "pagada") & (
-            pd.to_datetime(sub.get("fecha_cc"), errors="coerce").notna()
-        )
-        fac_p = pd.to_numeric(sub.get("fac_monto_total", 0.0), errors="coerce").where(mask_seg, other=0.0).sum()
-        cont_p = pd.to_numeric(sub.get("monto_autorizado", 0.0), errors="coerce").where(mask_seg, other=0.0).sum()
-        g1 = (cont_p / fac_p - 1.0) * 100 if fac_p > 0 else 0.0
 
         stats = [
-            ("Documentos", f"{len(sub):,}"),
-            ("Total pagado", money(k["total_pagado_aut"])),
-            (LABELS["dpp_emision_pago"], f"{one_decimal(k['dso'])} días"),
-            (LABELS["dic_emision_contab"], f"{one_decimal(k['tfa'])} días"),
-            (LABELS["dcp_contab_pago"], f"{one_decimal(k['tpa'])} días"),
-            (LABELS["brecha_porcentaje"], f"{one_decimal(g1)}%"),
+            ("Documentos", f"{int(k['docs_total']):,}"),
+            ("Total pagado", money(k["total_pagado"])),
+            (LABELS["dpp_emision_pago"], _fmt_days_metric(k["dpp"])),
+            (LABELS["dic_emision_contab"], _fmt_days_metric(k["dic"])),
+            (LABELS["dcp_contab_pago"], _fmt_days_metric(k["dcp"])),
+            (LABELS["brecha_porcentaje"], f"{one_decimal(k['brecha_pct'])}%"),
         ]
         segment_cards.append(
             _segment_card(title, money(k["total_facturado"]), stats)
