@@ -712,16 +712,36 @@ def general_date_filters_ui(df: pd.DataFrame):
     if ss.get("pay_ini") is None:
         ss["pay_ini"], ss["pay_fin"] = pay_min, pay_max
 
-    st.subheader("Filtros Globales")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("##### Fecha de Factura")
-        ss["fac_ini"] = st.date_input("Desde", value=ss["fac_ini"], key="fac_ini_ui", format="DD/MM/YYYY")
-        ss["fac_fin"] = st.date_input("Hasta", value=ss["fac_fin"], key="fac_fin_ui", format="DD/MM/YYYY")
-    with c2:
-        st.markdown("##### Fecha de Pago")
-        ss["pay_ini"] = st.date_input("Desde", value=ss["pay_ini"], key="pay_ini_ui", format="DD/MM/YYYY")
-        ss["pay_fin"] = st.date_input("Hasta", value=ss["pay_fin"], key="pay_fin_ui", format="DD/MM/YYYY")
+    with st.expander("▼ Filtros de Fecha", expanded=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("##### Fecha de Factura")
+            ss["fac_ini"] = st.date_input(
+                "Desde",
+                value=ss["fac_ini"],
+                key="fac_ini_ui",
+                format="DD/MM/YYYY",
+            )
+            ss["fac_fin"] = st.date_input(
+                "Hasta",
+                value=ss["fac_fin"],
+                key="fac_fin_ui",
+                format="DD/MM/YYYY",
+            )
+        with c2:
+            st.markdown("##### Fecha de Pago")
+            ss["pay_ini"] = st.date_input(
+                "Desde",
+                value=ss["pay_ini"],
+                key="pay_ini_ui",
+                format="DD/MM/YYYY",
+            )
+            ss["pay_fin"] = st.date_input(
+                "Hasta",
+                value=ss["pay_fin"],
+                key="pay_fin_ui",
+                format="DD/MM/YYYY",
+            )
     return ss["fac_ini"], ss["fac_fin"], ss["pay_ini"], ss["pay_fin"]
 
 def apply_general_filters(df: pd.DataFrame, fac_ini, fac_fin, pay_ini, pay_fin)->pd.DataFrame:
