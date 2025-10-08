@@ -142,7 +142,12 @@ def _agg_base(df_in: pd.DataFrame, group_col: str) -> pd.DataFrame:
     g = g.sort_values(orden_metric, ascending=False).reset_index(drop=True)
     return g
 
-def agregar_ranking(df_in: pd.DataFrame, group_col: str, nombre_col: str) -> pd.DataFrame:
+def agregar_ranking(
+    df_in: pd.DataFrame,
+    group_col: str,
+    nombre_col: str,
+    drop_cols: list[str] | None = None,
+) -> pd.DataFrame:
     agg = _agg_base(df_in, group_col)
     agg = agg.rename(columns={group_col: nombre_col})
     agg = agg.head(top_n)
@@ -154,6 +159,8 @@ def agregar_ranking(df_in: pd.DataFrame, group_col: str, nombre_col: str) -> pd.
         "Cantidad Cuenta Especial","% Cuenta Especial",
         "Proveedor Prioritario","Cuenta Especial"
     ]
+    if drop_cols:
+        cols = [c for c in cols if c not in drop_cols]
     agg = agg.reindex(columns=cols)
     return agg
 
@@ -238,9 +245,14 @@ st.info("**Nota:** Un proveedor o centro se clasifica como *Prioritario* o *Cuen
 # -------- Top Proveedores --------
 st.markdown("---")
 st.subheader("Top Proveedores")
-prov = agregar_ranking(dfp_f, "prr_razon_social", "Razón Social")
+prov = agregar_ranking(
+    dfp_f,
+    "prr_razon_social",
+    "Razón Social",
+    drop_cols=["Cantidad Prioritario", "% Prioritario", "Cuenta Especial"],
+)
 # Formato de pantalla (no afecta Excel)
-prov_disp = _format_percent_cols_for_display(prov, ["% Prioritario", "% Cuenta Especial"])
+prov_disp = _format_percent_cols_for_display(prov, ["% Cuenta Especial"])
 prov_disp = _format_money_cols_for_display(prov_disp, ["Monto Pagado"])
 style_table(_style_headers(prov_disp))
 st.download_button(
@@ -253,8 +265,13 @@ st.download_button(
 st.markdown("---")
 st.subheader("Top Centros de Costo")
 if "nombre_centro_costo" in dfp_f.columns:
-    cc = agregar_ranking(dfp_f, "nombre_centro_costo", "Centro de Costo")
-    cc_disp = _format_percent_cols_for_display(cc, ["% Prioritario", "% Cuenta Especial"])
+    cc = agregar_ranking(
+        dfp_f,
+        "nombre_centro_costo",
+        "Centro de Costo",
+        drop_cols=["Cantidad Cuenta Especial", "% Cuenta Especial", "Proveedor Prioritario"],
+    )
+    cc_disp = _format_percent_cols_for_display(cc, ["% Prioritario"])
     cc_disp = _format_money_cols_for_display(cc_disp, ["Monto Pagado"])
     style_table(_style_headers(cc_disp))
     st.download_button(
