@@ -198,7 +198,7 @@ def _fmt_pct(val: float) -> str:
 # =========================================================
 # 1) KPIs
 # =========================================================
-st.subheader("1) Resumen KPIs de Pagos (Facturas Pagadas)")
+st.subheader("1) Resumen KPIs Facturas")
 if df.empty:
     st.info("No hay datos con los filtros actuales.")
 else:
