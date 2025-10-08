@@ -18,7 +18,7 @@ from streamlit.components.v1 import html as components_html
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
     advanced_filters_ui, apply_advanced_filters, header_ui, money, one_decimal,
-    style_table
+    style_table, sanitize_df, safe_markdown
 )
 from lib_report import excel_bytes_single
 
@@ -148,7 +148,7 @@ def _metrics_explainer_block(title: str, thr_exc: int, thr_good: int, thr_ok: in
 def _render_metric_cards(cards: list[dict[str, str]]):
     if not cards:
         return
-    pieces = ["<div class='forecast-card-grid'>"]
+    pieces: list[str] = []
     for card in cards:
         label = html.escape(card.get("label", ""))
         value = html.escape(card.get("value", ""))
@@ -167,8 +167,7 @@ def _render_metric_cards(cards: list[dict[str, str]]):
             "</div>"
         )
         pieces.append(card_html)
-    pieces.append("</div>")
-    st.markdown("".join(pieces), unsafe_allow_html=True)
+    safe_markdown("<div class='forecast-card-grid'>" + "".join(pieces) + "</div>")
 
 
 def _mape_status(mape_val: float, thr_exc: int, thr_good: int, thr_ok: int):
@@ -241,10 +240,7 @@ def _forecast_table_style(df_in: pd.DataFrame) -> pd.io.formats.style.Styler:
 
 
 def _render_note(text: str):
-    st.markdown(
-        f"<p class='forecast-note'>{html.escape(text)}</p>",
-        unsafe_allow_html=True,
-    )
+    safe_markdown(f"<p class='forecast-note'>{html.escape(text)}</p>")
 
 
 # ------------------------ cabecera y filtros ------------------------ #
@@ -485,6 +481,7 @@ for col in cols[1:]:
     display_general_fmt[col] = display_general_fmt[col].map(money)
 
 st.markdown("#### Horizonte proyectado (General)")
+display_general_fmt = sanitize_df(display_general_fmt)
 styled_general = _forecast_table_style(display_general_fmt[cols])
 style_table(styled_general)
 export_general = display_general.rename(columns={"Valor Estimado": "Valor_Estimado"})
@@ -499,7 +496,7 @@ with st.expander("¿Cómo leer este bloque? (General)"):
     _metrics_explainer_block("General", thr_exc, thr_good, thr_ok)
 
 # ------------------------ Forecast por Tipo de Cuenta ------------------------ #
-st.markdown("---")
+safe_markdown("---")
 st.subheader("5. Forecast por Tipo de Cuenta")
 freq_alias = "MS" if gran == "Mes" else ("W-MON" if gran == "Semana" else "D")
 
@@ -591,6 +588,7 @@ else:
         tb_display = tb.copy()
         for col in ["Valor Estimado", "IC Bajo", "IC Alto"]:
             tb_display[col] = tb_display[col].map(money)
+        tb_display = sanitize_df(tb_display)
         style_table(_forecast_table_style(tb_display))
         export_ce = tb.rename(
             columns={"Valor Estimado": "Valor_Estimado", "IC Bajo": "IC_Bajo", "IC Alto": "IC_Alto"}
@@ -725,6 +723,7 @@ else:
         tb_display = tb.copy()
         for col in ["Valor Estimado", "IC Bajo", "IC Alto"]:
             tb_display[col] = tb_display[col].map(money)
+        tb_display = sanitize_df(tb_display)
         style_table(_forecast_table_style(tb_display))
         export_ne = tb.rename(
             columns={"Valor Estimado": "Valor_Estimado", "IC Bajo": "IC_Bajo", "IC Alto": "IC_Alto"}

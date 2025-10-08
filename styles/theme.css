@@ -711,6 +711,17 @@ div[data-testid="stMetricValue"] {
 }
 
 /* Tablas base (st.table / st.dataframe / pandas styler) */
+.block-container p:empty,
+.block-container div:empty {
+  display: none !important;
+}
+
+.stDataFrame td,
+[data-testid="stTable"] td {
+  color: #0f172a !important;
+  opacity: 1 !important;
+}
+
 div[data-testid="stTable"] table,
 .stDataFrame table,
 .styled-table-wrapper table,

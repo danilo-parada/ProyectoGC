@@ -11,7 +11,7 @@ from core.utils import LABELS, TOOLTIPS
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
     advanced_filters_ui, apply_advanced_filters, money, one_decimal, header_ui,
-    ESTADO_LABEL
+    ESTADO_LABEL, sanitize_df, safe_markdown
 )
 from lib_metrics import ensure_derived_fields, compute_kpis
 from lib_report import excel_bytes_multi
@@ -71,10 +71,7 @@ def _render_range_cards(items: list[tuple[str, str]]):
     if not items:
         return
     cards_html = "".join(_range_card(title, value) for title, value in items)
-    st.markdown(
-        '<div class="app-range-card-grid">' + cards_html + '</div>',
-        unsafe_allow_html=True,
-    )
+    safe_markdown('<div class="app-range-card-grid">' + cards_html + '</div>')
 
 
 def _render_percentile_cards(items: list[tuple[str, str, str | None]]):
@@ -94,7 +91,7 @@ def _render_percentile_cards(items: list[tuple[str, str, str | None]]):
             f'{helper_html}'
             '</div>'
         )
-    st.markdown('<div class="app-percentile-grid">' + "".join(cards) + '</div>', unsafe_allow_html=True)
+    safe_markdown('<div class="app-percentile-grid">' + "".join(cards) + '</div>')
    # línea promedio LOCAL
 
 st.set_page_config(page_title="Tablero KPI", layout="wide")
@@ -217,21 +214,20 @@ metric_cards = [
         tooltip=TOOLTIPS["brecha_porcentaje"],
     ),
 ]
-st.markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>', unsafe_allow_html=True)
+safe_markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>')
 
-st.markdown(
+safe_markdown(
     f"""
     <div class="app-note">
         <strong>{LABELS["brecha_porcentaje"]}</strong> = (Contabilizado pagado / Facturado pagado - 1) * 100.
         Facturado pagado = {money(fact_pag)} | Contabilizado pagado = {money(contab_pag)}.
     </div>
     """,
-    unsafe_allow_html=True,
 )
 
 # ====== KPIs por cuenta especial (Si/No) ======
 if "cuenta_especial" in df_kpi.columns:
-    st.markdown('<div class="app-separator"></div>', unsafe_allow_html=True)
+    safe_markdown('<div class="app-separator"></div>')
     st.markdown("### Metricas por cuenta especial")
 
     ce_mask_all = _coerce_bool_series(df_kpi["cuenta_especial"])
@@ -261,12 +257,12 @@ if "cuenta_especial" in df_kpi.columns:
         )
 
     if segment_cards:
-        st.markdown('<div class="app-card-grid">' + "".join(segment_cards) + '</div>', unsafe_allow_html=True)
+        safe_markdown('<div class="app-card-grid">' + "".join(segment_cards) + '</div>')
     else:
         st.info("Sin registros suficientes para evaluar segmentos de cuenta especial.")
 
 # ===================== Analisis interactivo de tiempos (filtros LOCALES) =====================
-st.markdown('<div class="app-separator"></div>', unsafe_allow_html=True)
+safe_markdown('<div class="app-separator"></div>')
 st.subheader("Analisis interactivo de tiempos")
 
 ctrl_row1 = st.columns(4)
@@ -431,7 +427,7 @@ with colB:
         st.info("Sin datos de Días desde Contabilización al Pago (DCP) en pagos contabilizados.")
 
 # ===================== NO PAGADAS — tiempos hasta hoy =====================
-st.markdown('<div class="app-separator"></div>', unsafe_allow_html=True)
+safe_markdown('<div class="app-separator"></div>')
 st.subheader("No Pagadas — tiempos *hasta hoy*")
 
 with st.expander("¿Cómo se calculan estos tiempos?"):
@@ -545,7 +541,7 @@ with c2:
         st.info("Sin registros en **Contabilizado sin Pago** con los filtros actuales.")
 
 # ===================== Composición del Portafolio =====================
-st.markdown('<div class="app-separator"></div>', unsafe_allow_html=True)
+safe_markdown('<div class="app-separator"></div>')
 st.subheader("Composición del Portafolio")
 
 modo = st.radio("Medir por…", ["Conteo de documentos","Monto Autorizado"], horizontal=True)
@@ -582,7 +578,7 @@ if "_ce_legible" in serie.columns:
     cols[3].plotly_chart(_pie(serie, "_ce_legible", "Cuenta Especial vs No"), use_container_width=True)
 
 # ===================== Exportación a Excel =====================
-st.markdown('<div class="app-separator"></div>', unsafe_allow_html=True)
+safe_markdown('<div class="app-separator"></div>')
 st.subheader("Exportar Dashboard a Excel (multi-hoja)")
 sheets = {}
 sheets["Pagadas"] = df_pag if not df_pag.empty else pd.DataFrame()
