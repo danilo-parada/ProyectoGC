@@ -218,7 +218,7 @@ def _forecast_table_style(df_in: pd.DataFrame) -> pd.io.formats.style.Styler:
             ("font-size", "var(--app-table-font-size)"),
             ("padding", "12px 16px"),
             ("border-bottom", "1px solid #e0e6ff"),
-            ("color", "var(--app-text-muted)"),
+            ("color", "var(--app-table-body-fg)"),
         ]},
         {"selector": "tbody tr:nth-child(even)", "props": [
             ("background-color", "#f5f7ff"),
@@ -250,11 +250,11 @@ header_ui(
     subtitle="Proyecciones sobre facturas pagadas (monto_autorizado en fecha_pagado)"
 )
 
-st.html('<div class="content-container">')
+st.markdown('<div class="content-container">', unsafe_allow_html=True)
 df0 = get_df_norm()
 if df0 is None:
     st.warning("Carga tus datos en 'Carga de Data' primero.")
-    st.html("</div>")
+    st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
 fac_ini, fac_fin, pay_ini, pay_fin = general_date_filters_ui(df0)
@@ -273,7 +273,7 @@ df_filtrado = apply_advanced_filters(df_filtrado, sede, [], prov, cc, oc, [], pr
 df = df_filtrado[df_filtrado["estado_pago"] == "pagada"].copy()
 if df.empty or "fecha_pagado" not in df.columns or df["fecha_pagado"].isna().all():
     st.info("No hay datos de pagos con los filtros seleccionados.")
-    st.html("</div>")
+    st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
 with st.expander("¿Qué datos se usan para el forecast?", expanded=True):
@@ -385,7 +385,7 @@ else:
         ci_low, ci_high = lb, ub
     except Exception as e:
         st.error(f"Error con Holt-Winters (Aditivo): {e}")
-        st.html("</div>")
+        st.markdown("</div>", unsafe_allow_html=True)
         st.stop()
 
 # ------------------------ visualización (GENERAL) ------------------------ #
@@ -771,4 +771,4 @@ else:
     with st.expander("¿Cómo leer este bloque? (Cuentas No Especiales)"):
         _metrics_explainer_block("Cuentas No Especiales", thr_exc, thr_good, thr_ok)
 
-st.html("</div>")
+st.markdown("</div>", unsafe_allow_html=True)
