@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from pandas.io.formats.style import Styler
 
-from core.utils import LABELS, TOOLTIPS
+from core.utils import get_label, get_tooltip
 from lib_common import (
     get_df_norm, general_date_filters_ui,
     advanced_filters_ui, money, one_decimal, header_ui,
@@ -415,31 +415,31 @@ else:
                 ("Sin pagar", money(kpi_total["facturado_sin_pagar"])),
             ],
             compact=False,
-            tooltip=TOOLTIPS["desglose_facturado"],
+            tooltip=get_tooltip("desglose_facturado"),
         ),
         _card_html(
             "Total pagado (real)",
             money(kpi_total["total_pagado_real"]),
             subtitle="Facturas con pago registrado",
             tag=f"{total_pagadas:,} pagos",
-            tooltip=TOOLTIPS["total_pagado_real"],
+            tooltip=get_tooltip("total_pagado_real"),
         ),
         _card_html(
-            LABELS["dpp_emision_pago"],
+            get_label("dpp_emision_pago"),
             _fmt_days(kpi_total["dpp"]),
-            subtitle=TOOLTIPS["dpp_emision_pago"],
+            subtitle=get_tooltip("dpp_emision_pago"),
         ),
         _card_html(
-            LABELS["dcp_contab_pago"],
+            get_label("dcp_contab_pago"),
             _fmt_days(kpi_total["dcp"]),
-            subtitle=TOOLTIPS["dcp_contab_pago"],
+            subtitle=get_tooltip("dcp_contab_pago"),
         ),
     ]
     cards.append(
         _card_html(
-            LABELS["dic_emision_contab"],
+            get_label("dic_emision_contab"),
             f"{len(df_filtered_common):,} doc.",
-            subtitle=TOOLTIPS["dic_emision_contab"],
+            subtitle=get_tooltip("dic_emision_contab"),
             stats=_dic_card_stats(dic_split_total),
             compact=False,
         )
@@ -458,9 +458,9 @@ else:
             dic_split_seg = compute_dic_split(sub)
             stats = [
                 ("Monto pagado (real)", money(k["total_pagado_real"])),
-                (LABELS["dpp_emision_pago"], _fmt_days(k["dpp"])),
-                (LABELS["dcp_contab_pago"], _fmt_days(k["dcp"])),
-                (LABELS["dic_emision_contab"], _fmt_days(k["dic"])),
+                (get_label("dpp_emision_pago"), _fmt_days(k["dpp"])),
+                (get_label("dcp_contab_pago"), _fmt_days(k["dcp"])),
+                (get_label("dic_emision_contab"), _fmt_days(k["dic"])),
             ]
             stats.extend(_dic_card_stats(dic_split_seg))
             segment_cards.append(
