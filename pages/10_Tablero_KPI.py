@@ -219,33 +219,26 @@ def _fmt_dic_avg(value: float | None) -> str:
 
 
 def _dic_stats_entries(dic_split: dict) -> list[tuple[str, str]]:
-    pagadas_avg = _fmt_dic_avg(dic_split.get("dic_pagadas_avg"))
     pagadas_n = int(dic_split.get("dic_pagadas_n", 0))
-    contab_avg = _fmt_dic_avg(dic_split.get("dic_contab_unpaid_avg"))
     contab_n = int(dic_split.get("dic_contab_unpaid_n", 0))
     no_contab_n = int(dic_split.get("no_contab_n", 0))
+    no_pagadas_n = contab_n + no_contab_n
     return [
-        ("Pagadas", f"{pagadas_avg} • {pagadas_n:,} facturas"),
-        ("Contabilizada", f"{contab_avg} • {contab_n:,} facturas"),
-        ("Pendiente de contabilizacion", f"{no_contab_n:,} facturas"),
+        ("Pagadas", f"{pagadas_n:,} fact."),
+        ("No pagadas", f"{no_pagadas_n:,} fact."),
+        ("Contab. sin pago", f"{contab_n:,} fact."),
+        ("No contabilizadas", f"{no_contab_n:,} fact."),
     ]
 
-
-docs_total = int(kpi.get("docs_total", 0))
-docs_pagadas = int(kpi.get("docs_pagados", 0))
-docs_sin_pago = max(docs_total - docs_pagadas, 0)
-
-facturado_stats = [
-    ("Pagado", f"{money(kpi['facturado_pagado'])} • {docs_pagadas:,} facturas"),
-    ("Sin pagar", f"{money(kpi['facturado_sin_pagar'])} • {docs_sin_pago:,} facturas"),
-]
 
 metric_cards = [
     _segment_card(
         "Facturado: Pagado vs Sin pagar",
         money(kpi["total_facturado"]),
-        facturado_stats,
-        caption=f"Facturas: {docs_total:,}",
+        [
+            ("Pagado", money(kpi["facturado_pagado"])),
+            ("Sin pagar", money(kpi["facturado_sin_pagar"])),
+        ],
         tooltip=get_tooltip("desglose_facturado"),
     ),
 ]
@@ -312,7 +305,7 @@ if "cuenta_especial" in df_filtered_common.columns:
         dic_split_seg = compute_dic_split(sub)
 
         stats = [
-            ("Documentos", f"{int(k['docs_total']):,}"),
+            ("Facturas totales", f"{int(k['docs_total']):,}"),
             ("Monto pagado (real)", money(k["total_pagado_real"])),
             (get_label("dpp_emision_pago"), _fmt_days_metric(k["dpp"])),
             (get_label("dcp_contab_pago"), _fmt_days_metric(k["dcp"])),

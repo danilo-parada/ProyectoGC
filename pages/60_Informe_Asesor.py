@@ -360,15 +360,15 @@ def _fmt_dic_avg(val: float | None) -> str:
     return f"{one_decimal(val)} d"
 
 def _dic_card_stats(dic_split: dict) -> list[tuple[str, str]]:
-    pagadas_avg = _fmt_dic_avg(dic_split.get("dic_pagadas_avg"))
     pagadas_n = int(dic_split.get("dic_pagadas_n", 0))
-    contab_avg = _fmt_dic_avg(dic_split.get("dic_contab_unpaid_avg"))
     contab_n = int(dic_split.get("dic_contab_unpaid_n", 0))
     no_contab_n = int(dic_split.get("no_contab_n", 0))
+    no_pagadas_n = contab_n + no_contab_n
     return [
-        ("Pagadas", f"{pagadas_avg} • {pagadas_n:,} facturas"),
-        ("Contabilizada", f"{contab_avg} • {contab_n:,} facturas"),
-        ("Pendiente de contabilizacion", f"{no_contab_n:,} facturas"),
+        ("Pagadas", f"{pagadas_n:,} fact."),
+        ("No pagadas", f"{no_pagadas_n:,} fact."),
+        ("Contab. sin pago", f"{contab_n:,} fact."),
+        ("No contabilizadas", f"{no_contab_n:,} fact."),
     ]
 
 def _fmt_pct(val: float) -> str:
@@ -483,6 +483,7 @@ else:
             k = compute_kpis(sub)
             dic_split_seg = compute_dic_split(sub)
             stats = [
+                ("Facturas totales", f"{int(k['docs_total']):,}"),
                 ("Monto pagado (real)", money(k["total_pagado_real"])),
                 (get_label("dpp_emision_pago"), _fmt_days(k["dpp"])),
                 (get_label("dcp_contab_pago"), _fmt_days(k["dcp"])),
@@ -493,7 +494,7 @@ else:
                 _card_html(
                     title=f"CE {'Si' if flag else 'No'}",
                     value=f"Monto facturado: {money(k['total_facturado'])}",
-                    subtitle=f"Documentos: {int(k['docs_total']):,}",
+                    subtitle="",
                     stats=stats,
                     compact=False,
                     tone="accent" if flag else "default",
