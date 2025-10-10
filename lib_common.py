@@ -219,6 +219,31 @@ def style_table(
 _THEME_CSS_PATH = Path(__file__).resolve().parent / "styles" / "theme.css"
 _THEME_CSS_CACHE: Optional[str] = None
 
+_MOBILE_NAV_LINKS: List[Dict[str, str]] = [
+    {"key": "inicio", "label": "Inicio", "href": "/"},
+    {"key": "tablero", "label": "Tablero KPI", "href": "/Tablero_KPI"},
+    {"key": "rankings", "label": "Rankings", "href": "/Rankings"},
+    {"key": "forecast", "label": "Forecast", "href": "/Forecast"},
+    {"key": "honorarios", "label": "Honorarios", "href": "/Honorarios"},
+    {"key": "informe", "label": "Informe Asesor", "href": "/Informe_Asesor"},
+]
+
+def _render_mobile_nav(active_key: Optional[str]) -> None:
+    links_html: List[str] = []
+    key_norm = (active_key or "").lower()
+    for item in _MOBILE_NAV_LINKS:
+        classes = ["app-mobile-nav__link"]
+        if item["key"].lower() == key_norm:
+            classes.append("app-mobile-nav__link--active")
+        label_html = html.escape(item["label"])
+        href = item["href"]
+        classes_html = " ".join(classes)
+        links_html.append(
+            f'<a class="{classes_html}" href="{href}" target="_self">{label_html}</a>'
+        )
+    safe_markdown('<nav class="app-mobile-nav">' + "".join(links_html) + '</nav>')
+
+
 def load_ui_theme():
     """
     Injecta la hoja de estilos global en cada render para mantener la apariencia
@@ -233,7 +258,7 @@ def load_ui_theme():
     if _THEME_CSS_CACHE:
         safe_markdown(f"<style>{_THEME_CSS_CACHE}</style>")
 
-def header_ui(title: str, current_page: str, subtitle: Optional[str] = None):
+def header_ui(title: str, current_page: str, subtitle: Optional[str] = None, *, nav_active: Optional[str] = None):
     load_ui_theme()
     safe_title = html.escape(str(title))
     safe_page = html.escape(str(current_page))
@@ -249,6 +274,7 @@ def header_ui(title: str, current_page: str, subtitle: Optional[str] = None):
         </div>
         """
     )
+    _render_mobile_nav(nav_active)
 
 
 # ============================================================

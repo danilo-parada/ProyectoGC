@@ -31,7 +31,8 @@ st.set_page_config(page_title="Informe Asesor", layout="wide")
 header_ui(
     title="Informe para la Toma de Decisiones Financieras",
     current_page="Informe Asesor",
-    subtitle="KPIs, deuda y priorización con foco en cuentas especiales y proveedores prioritarios"
+    subtitle="KPIs, deuda y priorización con foco en cuentas especiales y proveedores prioritarios",
+    nav_active="informe",
 )
 
 # -------------------- Estilos locales para tablas --------------------

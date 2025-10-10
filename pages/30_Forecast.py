@@ -248,7 +248,8 @@ st.set_page_config(page_title="Forecast", layout="wide")
 header_ui(
     title="Laboratorio de Forecast de Pagos",
     current_page="Forecast",
-    subtitle="Proyecciones sobre facturas pagadas (monto_autorizado en fecha_pagado)"
+    subtitle="Proyecciones sobre facturas pagadas (monto_autorizado en fecha_pagado)",
+    nav_active="forecast",
 )
 
 df0 = get_df_norm()
