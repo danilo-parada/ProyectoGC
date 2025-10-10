@@ -898,14 +898,14 @@ div[data-testid="stTable"] tbody td,
 
 /* Compactar inputs de proyección */
 .mini-inputs-row [data-testid="stNumberInput"] input {
-  width: 40px !important;
-  max-width: 40px !important;
-  padding: 2px 4px !important;
+  width: 92px !important;
+  max-width: 92px !important;
+  padding: 4px 8px !important;
   text-align: center !important;
 }
 .mini-inputs-row [data-testid="stNumberInput"] button {
-  min-width: 20px !important;
-  padding: 2px 4px !important;
+  min-width: 24px !important;
+  padding: 2px 6px !important;
 }
 .mini-inputs-row [data-testid="stNumberInput"] label p {
   font-size: 0.82rem !important;
