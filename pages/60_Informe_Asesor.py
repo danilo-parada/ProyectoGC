@@ -743,6 +743,19 @@ def draw_debt_panel(title: str, dpanel: pd.DataFrame):
             ("Hoy", f"{money(kk['hoy'])} • {_fmt_count(kk['c_hoy'])}"),
             ("Por vencer", f"{money(kk['por_ven'])} • {_fmt_count(kk['c_por'])}"),
         ]
+        if title == "Contabilizado Pendiente de Pago":
+            stats = [
+                item
+                for item in stats
+                if item[0]
+                not in {"Monto pendiente de contabilización", "Días prom. sin contabilizar"}
+            ]
+        elif title == "Pendiente de Contabilización":
+            stats = [
+                item
+                for item in stats
+                if item[0] not in {"Monto contabilizado", "Días prom. sin pagar"}
+            ]
         cards.append(
             _card_html(
                 title=f"CE {'Si' if flag else 'No'}",
