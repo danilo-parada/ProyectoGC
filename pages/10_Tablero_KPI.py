@@ -210,15 +210,15 @@ def _fmt_dic_avg(value: float | None) -> str:
 
 
 def _dic_stats_entries(dic_split: dict) -> list[tuple[str, str]]:
-    pagadas_avg = _fmt_dic_avg(dic_split.get("dic_pagadas_avg"))
     pagadas_n = int(dic_split.get("dic_pagadas_n", 0))
-    contab_avg = _fmt_dic_avg(dic_split.get("dic_contab_unpaid_avg"))
     contab_n = int(dic_split.get("dic_contab_unpaid_n", 0))
     no_contab_n = int(dic_split.get("no_contab_n", 0))
+    no_pagadas_n = contab_n + no_contab_n
     return [
-        ("Pagadas", f"{pagadas_avg} • {pagadas_n:,} doc."),
-        ("Contab. sin pago", f"{contab_avg} • {contab_n:,} doc."),
-        ("No contabilizadas", f"{no_contab_n:,} doc."),
+        ("Pagadas", f"{pagadas_n:,} fact."),
+        ("No pagadas", f"{no_pagadas_n:,} fact."),
+        ("Contab. sin pago", f"{contab_n:,} fact."),
+        ("No contabilizadas", f"{no_contab_n:,} fact."),
     ]
 
 
@@ -274,7 +274,7 @@ if "cuenta_especial" in df_filtered_common.columns:
         dic_split_seg = compute_dic_split(sub)
 
         stats = [
-            ("Documentos", f"{int(k['docs_total']):,}"),
+            ("Facturas totales", f"{int(k['docs_total']):,}"),
             ("Monto pagado (real)", money(k["total_pagado_real"])),
             (get_label("dpp_emision_pago"), _fmt_days_metric(k["dpp"])),
             (get_label("dcp_contab_pago"), _fmt_days_metric(k["dcp"])),
