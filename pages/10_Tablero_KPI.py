@@ -114,6 +114,7 @@ header_ui(
     "Métricas de Pagos y Ciclo de Facturas",
     current_page="Resumen facturas",
     subtitle="Resumen de indicadores generales de facturas",
+    nav_active="tablero",
 )
 
 # ===================== Helpers CE robusto =====================
