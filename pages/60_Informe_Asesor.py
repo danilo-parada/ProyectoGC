@@ -408,6 +408,63 @@ else:
     total_pagadas = int(kpi_total["docs_pagados"])
     docs_sin_pago = max(total_docs - total_pagadas, 0)
 
+    pagadas_series = pd.to_numeric(
+        df_filtered_common.get(
+            "monto_pagado_real", pd.Series(0.0, index=df_filtered_common.index)
+        ),
+        errors="coerce",
+    ).fillna(0.0)
+    pagadas_mask_bool = pagadas_series > 0
+    df_no_pag = df_filtered_common.loc[~pagadas_mask_bool].copy()
+
+    today = pd.Timestamp.today().normalize()
+    fac_np_all = pd.to_datetime(
+        df_no_pag.get("fac_fecha_factura", pd.Series(dtype="datetime64[ns]")),
+        errors="coerce",
+    )
+    cc_np_all = pd.to_datetime(
+        df_no_pag.get("fecha_cc", pd.Series(dtype="datetime64[ns]")), errors="coerce"
+    )
+    pag_np_all = pd.to_datetime(
+        df_no_pag.get("fecha_pagado", pd.Series(dtype="datetime64[ns]")), errors="coerce"
+    )
+
+    maut_np_all = pd.to_numeric(
+        df_no_pag.get("monto_autorizado", pd.Series(0.0, index=df_no_pag.index)),
+        errors="coerce",
+    ).fillna(0.0)
+    mtotal_np_all = pd.to_numeric(
+        df_no_pag.get("fac_monto_total", pd.Series(0.0, index=df_no_pag.index)),
+        errors="coerce",
+    ).fillna(0.0)
+
+    mask_contab_sin_pago = cc_np_all.notna() & pag_np_all.isna()
+    mask_pend_contab = cc_np_all.isna() & pag_np_all.isna()
+
+    dias_contab_hoy = (today - cc_np_all[mask_contab_sin_pago]).dt.days
+    dias_contab_hoy = pd.to_numeric(dias_contab_hoy, errors="coerce")
+    dias_contab_hoy = dias_contab_hoy[dias_contab_hoy >= 0]
+    mean_np_contab_sin_pago = (
+        float(np.nanmean(dias_contab_hoy))
+        if not dias_contab_hoy.dropna().empty
+        else float("nan")
+    )
+
+    dias_emision_hoy = (today - fac_np_all[mask_pend_contab]).dt.days
+    dias_emision_hoy = pd.to_numeric(dias_emision_hoy, errors="coerce")
+    dias_emision_hoy = dias_emision_hoy[dias_emision_hoy >= 0]
+    mean_np_sin_contab = (
+        float(np.nanmean(dias_emision_hoy))
+        if not dias_emision_hoy.dropna().empty
+        else float("nan")
+    )
+
+    count_contab_sin_pago = int(mask_contab_sin_pago.sum())
+    count_pend_contab = int(mask_pend_contab.sum())
+
+    monto_contab_sin_pago = float(maut_np_all.loc[mask_contab_sin_pago].sum())
+    monto_pend_contab = float(mtotal_np_all.loc[mask_pend_contab].sum())
+
     facturado_stats = [
         ("Pagado", f"{money(kpi_total['facturado_pagado'])} • {total_pagadas:,} facturas"),
         ("Sin pagar", f"{money(kpi_total['facturado_sin_pagar'])} • {docs_sin_pago:,} facturas"),
@@ -454,20 +511,29 @@ else:
         )
     )
 
-    contab_unpaid_avg = _fmt_dic_avg(dic_split_total.get("dic_contab_unpaid_avg"))
-    contab_unpaid_n = int(dic_split_total.get("dic_contab_unpaid_n", 0))
-    no_contab_n = int(dic_split_total.get("no_contab_n", 0))
+    cards.append(
+        _card_html(
+            "Facturas pendiente de pago",
+            money(monto_contab_sin_pago),
+            stats=[
+                ("Promedio contab → hoy", _fmt_days(mean_np_contab_sin_pago)),
+                ("Contabilizadas sin pago", f"{count_contab_sin_pago:,} facturas"),
+            ],
+            compact=False,
+            tooltip="Monto autorizado pendiente y días desde contabilización hasta hoy.",
+        )
+    )
 
     cards.append(
         _card_html(
-            "No Pagadas",
-            money(kpi_total["facturado_sin_pagar"]),
+            "Pendiente de Contabilización",
+            money(monto_pend_contab),
             stats=[
-                ("Contabilizada", f"{contab_unpaid_avg} • {contab_unpaid_n:,} facturas"),
-                ("Pendiente de contabilizacion", f"{no_contab_n:,} facturas"),
+                ("Promedio emisión → hoy", _fmt_days(mean_np_sin_contab)),
+                ("Facturas sin contabilizar", f"{count_pend_contab:,} facturas"),
             ],
             compact=False,
-            tooltip=get_tooltip("dic_emision_contab"),
+            tooltip="Monto facturado sin contabilizar y días desde emisión hasta hoy.",
         )
     )
     _render_cards(cards)
