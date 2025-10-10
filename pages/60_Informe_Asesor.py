@@ -798,10 +798,12 @@ prio_local = col_prioritario.radio(
     horizontal=True,
     index=0,
 )
+st.markdown('<div class="mini-inputs-row">', unsafe_allow_html=True)
 horizonte = col_horizonte.number_input("Horizonte (días)", 7, 90, 30, 7)
-tabla_proyeccion_dias = col_tabla.number_input(
+dias_tabla = col_tabla.number_input(
     "Días tabla a proyectar", 1, int(horizonte), 3, 1
 )
+st.markdown('</div>', unsafe_allow_html=True)
 
 _LOCAL_FILTER_STATE_KEY = "presupuesto_filters_snapshot"
 _LOCAL_AMOUNT_KEY = "presupuesto_hoy"
@@ -921,8 +923,8 @@ if not df_nopag_loc.empty and "fecha_venc_30" in df_nopag_loc:
                       .reset_index()
                       .rename(columns={"fecha_venc_30": "Fecha"}))
         flujo["Flujo_Acumulado"] = flujo["Monto_a_Pagar"].cumsum()
-        st.markdown(f"**Proyección Próximos {int(tabla_proyeccion_dias)} días**")
-        small = flujo.head(int(tabla_proyeccion_dias)).rename(columns={"Fecha":"Día","Monto_a_Pagar":"Monto a Pagar","Cant_Facturas":"Cant. Facturas"})
+        st.markdown(f"**Proyección Próximos {int(dias_tabla)} días**")
+        small = flujo.head(int(dias_tabla)).rename(columns={"Fecha":"Día","Monto_a_Pagar":"Monto a Pagar","Cant_Facturas":"Cant. Facturas"})
         small_display = small.copy()
         small_display["Monto a Pagar"] = small_display["Monto a Pagar"].map(money)
         if "Flujo_Acumulado" in small_display:
@@ -934,7 +936,7 @@ if not df_nopag_loc.empty and "fecha_venc_30" in df_nopag_loc:
         secondary_color = "#ff7043"
         accumulated_color = "#1e88e5"
 
-        selected_count = int(tabla_proyeccion_dias)
+        selected_count = int(dias_tabla)
         selected = flujo.iloc[:selected_count]
 
         fig = go.Figure()
