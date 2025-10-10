@@ -778,12 +778,26 @@ draw_debt_panel("Pendiente de Contabilización", n2)
 st.subheader("4) Proyección de Vencimientos y Tablas de Pago")
 st.caption("Los filtros siguientes impactan esta sección y las tablas/presupuesto hacia abajo.")
 
-colf1, colf2, colf3 = st.columns([1,1,2])
-ce_local = colf1.radio("Cuenta Especial (local)", ["Todas","Cuenta Especial","No Cuenta Especial"], horizontal=True, index=0)
-prio_local = colf2.radio("Proveedor Prioritario (local)", ["Todos","Prioritario","No Prioritario"], horizontal=True, index=0)
+colf1, colf2, colf3, colf4 = st.columns([1, 1, 0.6, 1.4])
+ce_local = colf1.radio(
+    "Cuenta Especial (local)",
+    ["Todas", "Cuenta Especial", "No Cuenta Especial"],
+    horizontal=True,
+    index=0,
+)
+prio_local = colf2.radio(
+    "Proveedor Prioritario (local)",
+    ["Todos", "Prioritario", "No Prioritario"],
+    horizontal=True,
+    index=0,
+)
 horizonte = colf3.number_input("Horizonte (días)", 7, 90, 30, 7)
 
-crit_sel = st.radio("Criterio de Orden", ["Riesgo de aprobación", "Urgencia de vencimiento"], horizontal=True)
+crit_sel = colf4.radio(
+    "Criterio de Orden",
+    ["Riesgo de aprobación", "Urgencia de vencimiento"],
+    horizontal=True,
+)
 
 _LOCAL_FILTER_STATE_KEY = "presupuesto_filters_snapshot"
 _LOCAL_AMOUNT_KEY = "presupuesto_hoy"
