@@ -10,7 +10,7 @@ from pandas.io.formats.style import Styler
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
     advanced_filters_ui, apply_advanced_filters, header_ui, style_table, money,
-    sanitize_df, safe_markdown
+    sanitize_df, safe_markdown, collapse_sidebar_immediately,
 )
 from lib_metrics import ensure_derived_fields, compute_monto_pagado_real
 from lib_report import excel_bytes_single, excel_bytes_multi

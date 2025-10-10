@@ -13,6 +13,7 @@ from lib_common import (
     money,
     sanitize_df,
     safe_markdown,
+    collapse_sidebar_immediately,
 )
 
 st.set_page_config(

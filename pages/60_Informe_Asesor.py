@@ -15,7 +15,7 @@ from core.utils import LABELS, TOOLTIPS
 from lib_common import (
     get_df_norm, general_date_filters_ui,
     advanced_filters_ui, money, one_decimal, header_ui,
-    style_table, sanitize_df, safe_markdown,
+    style_table, sanitize_df, safe_markdown, collapse_sidebar_immediately,
 )
 from lib_metrics import (
     ensure_derived_fields,
