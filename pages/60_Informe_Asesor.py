@@ -800,7 +800,7 @@ draw_debt_panel("Pendiente de Contabilización", n2)
 st.subheader("4) Proyección de Vencimientos y Tablas de Pago")
 st.caption("Los filtros siguientes impactan esta sección y las tablas/presupuesto hacia abajo.")
 
-col_criterio, col_cuenta, col_prioritario, col_horizonte, col_tabla = st.columns([1.4, 1, 1, 0.6, 0.7])
+col_criterio, col_cuenta, col_prioritario = st.columns([1.4, 1, 1])
 
 crit_sel = col_criterio.radio(
     "Criterio de Orden",
@@ -820,12 +820,7 @@ prio_local = col_prioritario.radio(
     horizontal=True,
     index=0,
 )
-st.markdown('<div class="mini-inputs-row">', unsafe_allow_html=True)
-horizonte = col_horizonte.number_input("Horizonte (días)", 7, 90, 30, 7)
-dias_tabla = col_tabla.number_input(
-    "Días tabla a proyectar", 1, int(horizonte), 3, 1
-)
-st.markdown('</div>', unsafe_allow_html=True)
+
 
 _LOCAL_FILTER_STATE_KEY = "presupuesto_filters_snapshot"
 _LOCAL_AMOUNT_KEY = "presupuesto_hoy"
@@ -935,6 +930,17 @@ _render_cards([
 
 
 # Proyección
+with st.container():
+    col_horizonte, col_tabla = st.columns([0.6, 0.7])
+    horizonte = col_horizonte.number_input("Horizonte (días)", min_value=7, max_value=90, value=30, step=7)
+    dias_tabla = col_tabla.number_input(
+        "Días tabla a proyectar",
+        min_value=1,
+        max_value=int(horizonte),
+        value=min(3, int(horizonte)),
+        step=1,
+    )
+
 fig_proyeccion = None
 if not df_nopag_loc.empty and "fecha_venc_30" in df_nopag_loc:
     proy = df_nopag_loc[df_nopag_loc["fecha_venc_30"].between(TODAY, TODAY + pd.to_timedelta(horizonte, "D"))]
