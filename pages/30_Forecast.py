@@ -244,7 +244,11 @@ def _render_note(text: str):
 
 
 # ------------------------ cabecera y filtros ------------------------ #
-st.set_page_config(page_title="Forecast", layout="wide")
+st.set_page_config(
+    page_title="Forecast",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 header_ui(
     title="Laboratorio de Forecast de Pagos",
     current_page="Forecast",
