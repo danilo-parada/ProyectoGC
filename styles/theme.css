@@ -518,6 +518,65 @@ div[data-testid="stMetricValue"] {
   letter-spacing: 0.3px;
 }
 
+/* Navegación móvil: enlaces horizontales y ocultar sidebar en pantallas pequeñas */
+.app-mobile-nav {
+  display: none;
+}
+
+.app-mobile-nav__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--app-text-muted);
+  background: rgba(79, 156, 255, 0.12);
+  border: 1px solid rgba(79, 156, 255, 0.24);
+  transition: background var(--transition), color var(--transition), border-color var(--transition), box-shadow var(--transition);
+  white-space: nowrap;
+}
+
+.app-mobile-nav__link:hover {
+  color: var(--app-text);
+  border-color: rgba(79, 156, 255, 0.45);
+}
+
+.app-mobile-nav__link--active {
+  background: var(--app-primary);
+  color: #091320;
+  border-color: rgba(79, 156, 255, 0.65);
+  box-shadow: 0 12px 28px rgba(33, 91, 160, 0.35);
+}
+
+@media (max-width: 1024px) {
+  [data-testid="stSidebar"],
+  [data-testid="stSidebarNav"],
+  [data-testid="stSidebarCollapseButton"],
+  [data-testid="stSidebarOpenButton"],
+  button[data-testid="stExpandSidebarButton"] {
+    display: none !important;
+  }
+
+  .app-mobile-nav {
+    display: flex;
+    gap: 0.6rem;
+    overflow-x: auto;
+    padding: 0.35rem 0;
+    margin-bottom: 1.05rem;
+  }
+
+  .app-mobile-nav::-webkit-scrollbar {
+    height: 0;
+  }
+
+  .app-hero {
+    padding: 1.55rem 1.7rem;
+  }
+}
+
 .app-range-card-grid {
   display: grid;
   gap: 1rem;

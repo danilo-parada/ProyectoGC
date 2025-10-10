@@ -15,7 +15,7 @@ from core.utils import LABELS, TOOLTIPS
 from lib_common import (
     get_df_norm, general_date_filters_ui,
     advanced_filters_ui, money, one_decimal, header_ui,
-    style_table, sanitize_df, safe_markdown,
+    style_table, sanitize_df, safe_markdown, collapse_sidebar_immediately,
 )
 from lib_metrics import (
     ensure_derived_fields,
@@ -27,11 +27,17 @@ from lib_metrics import (
 from lib_report import excel_bytes_single, generate_pdf_report
 
 # -------------------- Config & Header --------------------
-st.set_page_config(page_title="Informe Asesor", layout="wide")
+st.set_page_config(
+    page_title="Informe Asesor",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+collapse_sidebar_immediately()
 header_ui(
     title="Informe para la Toma de Decisiones Financieras",
     current_page="Informe Asesor",
-    subtitle="KPIs, deuda y priorización con foco en cuentas especiales y proveedores prioritarios"
+    subtitle="KPIs, deuda y priorización con foco en cuentas especiales y proveedores prioritarios",
+    nav_active="informe",
 )
 
 # -------------------- Estilos locales para tablas --------------------

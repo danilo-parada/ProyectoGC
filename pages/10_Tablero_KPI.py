@@ -13,7 +13,8 @@ from core.utils import LABELS, TOOLTIPS
 from lib_common import (
     get_df_norm, general_date_filters_ui,
     advanced_filters_ui, money, one_decimal, header_ui,
-    ESTADO_LABEL, sanitize_df, safe_markdown
+    ESTADO_LABEL, sanitize_df, safe_markdown,
+    collapse_sidebar_immediately,
 )
 from lib_metrics import (
     ensure_derived_fields,
@@ -107,13 +108,19 @@ def _render_percentile_cards(items: List[Tuple[str, str, Optional[str]]]):
             '</div>'
         )
     safe_markdown('<div class="app-percentile-grid">' + "".join(cards) + '</div>')
-   # línea promedio LOCAL
+    # línea promedio LOCAL
 
-st.set_page_config(page_title="Tablero KPI", layout="wide")
+st.set_page_config(
+    page_title="Tablero KPI",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+collapse_sidebar_immediately()
 header_ui(
     "Métricas de Pagos y Ciclo de Facturas",
     current_page="Resumen facturas",
     subtitle="Resumen de indicadores generales de facturas",
+    nav_active="tablero",
 )
 
 # ===================== Helpers CE robusto =====================

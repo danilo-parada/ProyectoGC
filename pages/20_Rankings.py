@@ -10,7 +10,7 @@ from pandas.io.formats.style import Styler
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
     advanced_filters_ui, apply_advanced_filters, header_ui, style_table, money,
-    sanitize_df, safe_markdown
+    sanitize_df, safe_markdown, collapse_sidebar_immediately,
 )
 from lib_metrics import ensure_derived_fields, compute_monto_pagado_real
 from lib_report import excel_bytes_single, excel_bytes_multi
@@ -23,11 +23,17 @@ ROW_BORDER = "#d9e1ff"
 ROW_STRIPED_BG = "#f2f5ff"
 ROW_HOVER_BG = "#e0e8ff"
 
-st.set_page_config(page_title="Rankings", layout="wide")
+st.set_page_config(
+    page_title="Rankings",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+collapse_sidebar_immediately()
 header_ui(
     title="Rankings por Categoría",
     current_page="Rankings",
-    subtitle="Top N por Proveedores y Centros, con filtros locales de Cuenta Especial y Prioritario"
+    subtitle="Top N por Proveedores y Centros, con filtros locales de Cuenta Especial y Prioritario",
+    nav_active="rankings",
 )
 
 # -------- Carga base --------

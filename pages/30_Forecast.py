@@ -18,7 +18,7 @@ from streamlit.components.v1 import html as components_html
 from lib_common import (
     get_df_norm, general_date_filters_ui, apply_general_filters,
     advanced_filters_ui, apply_advanced_filters, header_ui, money, one_decimal,
-    style_table, sanitize_df, safe_markdown
+    style_table, sanitize_df, safe_markdown, collapse_sidebar_immediately,
 )
 from lib_report import excel_bytes_single
 
@@ -244,11 +244,17 @@ def _render_note(text: str):
 
 
 # ------------------------ cabecera y filtros ------------------------ #
-st.set_page_config(page_title="Forecast", layout="wide")
+st.set_page_config(
+    page_title="Forecast",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+collapse_sidebar_immediately()
 header_ui(
     title="Laboratorio de Forecast de Pagos",
     current_page="Forecast",
-    subtitle="Proyecciones sobre facturas pagadas (monto_autorizado en fecha_pagado)"
+    subtitle="Proyecciones sobre facturas pagadas (monto_autorizado en fecha_pagado)",
+    nav_active="forecast",
 )
 
 df0 = get_df_norm()
