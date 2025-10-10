@@ -192,6 +192,51 @@ pagadas_mask_bool = pagadas_series > 0
 df_pag = df[pagadas_mask_bool].copy()
 df_no_pag = df[~pagadas_mask_bool].copy()
 
+today = pd.Timestamp.today().normalize()
+
+fac_np_all = pd.to_datetime(
+    df_no_pag.get("fac_fecha_factura", pd.Series(dtype="datetime64[ns]")),
+    errors="coerce",
+)
+cc_np_all = pd.to_datetime(
+    df_no_pag.get("fecha_cc", pd.Series(dtype="datetime64[ns]")), errors="coerce"
+)
+pag_np_all = pd.to_datetime(
+    df_no_pag.get("fecha_pagado", pd.Series(dtype="datetime64[ns]")), errors="coerce"
+)
+
+maut_np_all = pd.to_numeric(
+    df_no_pag.get("monto_autorizado", pd.Series(0.0, index=df_no_pag.index)),
+    errors="coerce",
+).fillna(0.0)
+mtotal_np_all = pd.to_numeric(
+    df_no_pag.get("fac_monto_total", pd.Series(0.0, index=df_no_pag.index)),
+    errors="coerce",
+).fillna(0.0)
+
+mask_contab_sin_pago = cc_np_all.notna() & pag_np_all.isna()
+mask_pend_contab = cc_np_all.isna() & pag_np_all.isna()
+
+dias_contab_hoy = (today - cc_np_all[mask_contab_sin_pago]).dt.days
+dias_contab_hoy = pd.to_numeric(dias_contab_hoy, errors="coerce")
+dias_contab_hoy = dias_contab_hoy[dias_contab_hoy >= 0]
+mean_np_contab_sin_pago = (
+    float(np.nanmean(dias_contab_hoy)) if not dias_contab_hoy.dropna().empty else np.nan
+)
+
+dias_emision_hoy = (today - fac_np_all[mask_pend_contab]).dt.days
+dias_emision_hoy = pd.to_numeric(dias_emision_hoy, errors="coerce")
+dias_emision_hoy = dias_emision_hoy[dias_emision_hoy >= 0]
+mean_np_sin_contab = (
+    float(np.nanmean(dias_emision_hoy)) if not dias_emision_hoy.dropna().empty else np.nan
+)
+
+count_contab_sin_pago = int(mask_contab_sin_pago.sum())
+count_pend_contab = int(mask_pend_contab.sum())
+
+monto_contab_sin_pago = float(maut_np_all.loc[mask_contab_sin_pago].sum())
+monto_pend_contab = float(mtotal_np_all.loc[mask_pend_contab].sum())
+
 # ===================== KPIs principales =====================
 st.subheader("Metricas principales del periodo")
 
@@ -290,19 +335,27 @@ metric_cards.append(
     )
 )
 
-contab_unpaid_avg = _fmt_dic_avg(dic_split.get("dic_contab_unpaid_avg"))
-contab_unpaid_n = int(dic_split.get("dic_contab_unpaid_n", 0))
-no_contab_n = int(dic_split.get("no_contab_n", 0))
+metric_cards.append(
+    _segment_card(
+        "Facturas pendiente de pago",
+        money(monto_contab_sin_pago),
+        [
+            ("Promedio contab → hoy", _fmt_days_metric(mean_np_contab_sin_pago)),
+            ("Contabilizadas sin pago", f"{count_contab_sin_pago:,} facturas"),
+        ],
+        tooltip="Monto autorizado pendiente y días desde contabilización hasta hoy.",
+    )
+)
 
 metric_cards.append(
     _segment_card(
-        "No Pagadas",
-        money(kpi["facturado_sin_pagar"]),
+        "Pendiente de Contabilización",
+        money(monto_pend_contab),
         [
-            ("Contabilizada", f"{contab_unpaid_avg} • {contab_unpaid_n:,} facturas"),
-            ("Pendiente de contabilizacion", f"{no_contab_n:,} facturas"),
+            ("Promedio emisión → hoy", _fmt_days_metric(mean_np_sin_contab)),
+            ("Facturas sin contabilizar", f"{count_pend_contab:,} facturas"),
         ],
-        tooltip=get_tooltip("dic_emision_contab"),
+        tooltip="Monto facturado sin contabilizar y días desde emisión hasta hoy.",
     )
 )
 safe_markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>')
@@ -513,38 +566,35 @@ st.subheader("No Pagadas — tiempos *hasta hoy*")
 
 with st.expander("¿Cómo se calculan estos tiempos?"):
     st.markdown(
-        """
-**Base temporal:** desde la **fecha de factura** (`fac_fecha_factura`) **hasta hoy**.  
+        f"""
+**Base temporal:** mediciones hasta la fecha actual (`{today.date()}`).
 Se muestran dos grupos:
-1) **Facturado sin Contabilizar**: no tiene `fecha_cc` ⇒ días = *hoy − emisión*.  
-2) **Contabilizado sin Pago**: sí tiene `fecha_cc` y no `fecha_pagado` ⇒ días = *hoy − contabilización*.  
+1) **Pendiente de Contabilización**: no tiene `fecha_cc` ⇒ días = *hoy − emisión*.
+2) **Facturas pendiente de pago**: sí tiene `fecha_cc` y no `fecha_pagado` ⇒ días = *hoy − contabilización*.
 Las líneas muestran **Promedio global** (fijo) y **Promedio local** (según filtros CE/Prioritario).
         """
     )
 
-# Promedios globales (referencia fija)
-today = pd.Timestamp.today().normalize()
-fac_np_g = pd.to_datetime(df_no_pag.get("fac_fecha_factura", pd.Series(dtype="datetime64[ns]")), errors="coerce")
-cc_np_g  = pd.to_datetime(df_no_pag.get("fecha_cc", pd.Series(dtype="datetime64[ns]")), errors="coerce")
-pag_np_g = pd.to_datetime(df_no_pag.get("fecha_pagado", pd.Series(dtype="datetime64[ns]")), errors="coerce")
-
-mean_np_sin_contab = float(np.nanmean((today - fac_np_g[cc_np_g.isna()]).dt.days)) if cc_np_g.isna().any() else np.nan
-mean_np_contab_sin_pago = float(np.nanmean((today - cc_np_g[(cc_np_g.notna()) & (pag_np_g.isna())]).dt.days)) \
-                          if ((cc_np_g.notna()) & (pag_np_g.isna())).any() else np.nan
-
 # Local (afectado por CE/Prioritario)
 df_no_pag_loc = _apply_locals(df_no_pag)
 
-fac_np = pd.to_datetime(df_no_pag_loc.get("fac_fecha_factura", pd.Series(dtype="datetime64[ns]")), errors="coerce")
-cc_np  = pd.to_datetime(df_no_pag_loc.get("fecha_cc", pd.Series(dtype="datetime64[ns]")), errors="coerce")
-pag_np = pd.to_datetime(df_no_pag_loc.get("fecha_pagado", pd.Series(dtype="datetime64[ns]")), errors="coerce")
+fac_np = pd.to_datetime(
+    df_no_pag_loc.get("fac_fecha_factura", pd.Series(dtype="datetime64[ns]")),
+    errors="coerce",
+)
+cc_np = pd.to_datetime(
+    df_no_pag_loc.get("fecha_cc", pd.Series(dtype="datetime64[ns]")), errors="coerce"
+)
+pag_np = pd.to_datetime(
+    df_no_pag_loc.get("fecha_pagado", pd.Series(dtype="datetime64[ns]")), errors="coerce"
+)
 
 mask_sin_cc   = cc_np.isna()
 mask_con_cc   = cc_np.notna()
 mask_sin_pago = pag_np.isna()
 
-df_no_cc = df_no_pag_loc[mask_sin_cc].copy()
-df_cc_sp = df_no_pag_loc[mask_con_cc & mask_sin_pago].copy()
+df_pend_contab_loc = df_no_pag_loc[mask_sin_cc & mask_sin_pago].copy()
+df_contab_sin_pago_loc = df_no_pag_loc[mask_con_cc & mask_sin_pago].copy()
 
 row_np = st.columns(2)
 max_dias_no = row_np[0].slider("Dia maximo a visualizar (No Pagadas)", 30, 365, 100, 10, key="max_dias_no")
@@ -591,35 +641,60 @@ def _stats_block(vals: pd.Series, xmax: int):
 
 c1, c2 = st.columns(2)
 with c1:
-    if not df_no_cc.empty:
-        dias_fac_hoy = (today - pd.to_datetime(df_no_cc["fac_fecha_factura"], errors="coerce")).dt.days
-        mean_local_np1 = float(np.nanmean(dias_fac_hoy)) if dias_fac_hoy.notna().any() else np.nan
-        fig4, _ = _hist_np_two_means(dias_fac_hoy, bins_no, RED, max_dias_no,
-                                     "Facturado sin Contabilizar (emisión → hoy)",
-                                     mean_global=mean_np_sin_contab, mean_local=mean_local_np1)
+    if not df_pend_contab_loc.empty:
+        dias_fac_hoy = (
+            today
+            - pd.to_datetime(df_pend_contab_loc["fac_fecha_factura"], errors="coerce")
+        ).dt.days
+        dias_fac_hoy = pd.to_numeric(dias_fac_hoy, errors="coerce")
+        dias_fac_hoy = dias_fac_hoy[dias_fac_hoy >= 0]
+        mean_local_np1 = (
+            float(np.nanmean(dias_fac_hoy)) if not dias_fac_hoy.dropna().empty else np.nan
+        )
+        fig4, _ = _hist_np_two_means(
+            dias_fac_hoy,
+            bins_no,
+            RED,
+            max_dias_no,
+            "Pendiente de Contabilización (emisión → hoy)",
+            mean_global=mean_np_sin_contab,
+            mean_local=mean_local_np1,
+        )
         st.plotly_chart(fig4, use_container_width=True)
 
         # Nota de validez
-        _validity_note(dias_fac_hoy, "Facturado sin contabilizar (emisión→hoy)")
+        _validity_note(dias_fac_hoy, "Pendiente de contabilización (emisión→hoy)")
 
         _stats_block(dias_fac_hoy, max_dias_no)
     else:
-        st.info("Sin registros en **Facturado sin Contabilizar** con los filtros actuales.")
+        st.info("Sin registros en **Pendiente de Contabilización** con los filtros actuales.")
 with c2:
-    if not df_cc_sp.empty:
-        dias_cc_hoy = (today - pd.to_datetime(df_cc_sp["fecha_cc"], errors="coerce")).dt.days
-        mean_local_np2 = float(np.nanmean(dias_cc_hoy)) if dias_cc_hoy.notna().any() else np.nan
-        fig5, _ = _hist_np_two_means(dias_cc_hoy, bins_no, RED, max_dias_no,
-                                     "Contabilizado sin Pago (contab. → hoy)",
-                                     mean_global=mean_np_contab_sin_pago, mean_local=mean_local_np2)
+    if not df_contab_sin_pago_loc.empty:
+        dias_cc_hoy = (
+            today - pd.to_datetime(df_contab_sin_pago_loc["fecha_cc"], errors="coerce")
+        ).dt.days
+        dias_cc_hoy = pd.to_numeric(dias_cc_hoy, errors="coerce")
+        dias_cc_hoy = dias_cc_hoy[dias_cc_hoy >= 0]
+        mean_local_np2 = (
+            float(np.nanmean(dias_cc_hoy)) if not dias_cc_hoy.dropna().empty else np.nan
+        )
+        fig5, _ = _hist_np_two_means(
+            dias_cc_hoy,
+            bins_no,
+            RED,
+            max_dias_no,
+            "Facturas pendiente de pago (contab. → hoy)",
+            mean_global=mean_np_contab_sin_pago,
+            mean_local=mean_local_np2,
+        )
         st.plotly_chart(fig5, use_container_width=True)
 
         # Nota de validez
-        _validity_note(dias_cc_hoy, "Contabilizado sin pago (contab.→hoy)")
+        _validity_note(dias_cc_hoy, "Facturas pendiente de pago (contab.→hoy)")
 
         _stats_block(dias_cc_hoy, max_dias_no)
     else:
-        st.info("Sin registros en **Contabilizado sin Pago** con los filtros actuales.")
+        st.info("Sin registros en **Facturas pendiente de pago** con los filtros actuales.")
 
 # ===================== Composición del Portafolio =====================
 safe_markdown('<div class="app-separator"></div>')
