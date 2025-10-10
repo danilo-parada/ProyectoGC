@@ -159,8 +159,8 @@ def _to_compact_schema(df: pd.DataFrame) -> pd.DataFrame:
     if "Nivel" not in d.columns:
         d["Nivel"] = ""
     d["Nivel"] = d["Nivel"].replace({
-        "Doc. Autorizado p/ Pago": "Aut.p/Pago",
-        "Doc. Pendiente de Autorización": "Pen. Aut."
+        "Contabilizado Pendiente de Pago": "Cont. Pen. Pago",
+        "Pendiente de Contabilización": "Pen. Contab."
     }).fillna("")
 
     # PP y CE -> Sí/NO (si faltan, usar False)

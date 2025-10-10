@@ -146,8 +146,8 @@ def ensure_derived_fields(df_in: Optional[pd.DataFrame]) -> pd.DataFrame:
             )
         if "Nivel" not in df.columns:
             df["Nivel"] = df["estado_pago"].map({
-                "autorizada_sin_pago": "Doc. Autorizado p/ Pago",
-                "sin_autorizacion": "Doc. Pendiente de Autorización",
+                "autorizada_sin_pago": "Contabilizado Pendiente de Pago",
+                "sin_autorizacion": "Pendiente de Contabilización",
             })
 
     if "prov_prioritario" not in df.columns:
