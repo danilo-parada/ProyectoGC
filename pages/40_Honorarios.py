@@ -15,11 +15,16 @@ from lib_common import (
     safe_markdown,
 )
 
-st.set_page_config(page_title="Honorarios", layout="wide")
+st.set_page_config(
+    page_title="Honorarios",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 header_ui(
     "Honorarios",
     current_page="Honorarios",
-    subtitle="Indicadores financieros y comportamiento de pago de honorarios."
+    subtitle="Indicadores financieros y comportamiento de pago de honorarios.",
+    nav_active="honorarios",
 )
 
 df_hon = get_honorarios_df()

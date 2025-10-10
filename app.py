@@ -19,9 +19,17 @@ from lib_common import (
     get_match_summary,
 )
 
-st.set_page_config(page_title="Carga de Data", layout="wide")
-header_ui("Carga de Data", current_page="Inicio",
-          subtitle="Primero carga la Maestra de Cuentas de Banco y luego tus documentos.")
+st.set_page_config(
+    page_title="Carga de Data",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+header_ui(
+    "Carga de Data",
+    current_page="Inicio",
+    subtitle="Primero carga la Maestra de Cuentas de Banco y luego tus documentos.",
+    nav_active="inicio",
+)
 
 # ---------------------------------------------------------------------
 # Estado inicial

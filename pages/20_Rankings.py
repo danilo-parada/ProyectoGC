@@ -23,11 +23,16 @@ ROW_BORDER = "#d9e1ff"
 ROW_STRIPED_BG = "#f2f5ff"
 ROW_HOVER_BG = "#e0e8ff"
 
-st.set_page_config(page_title="Rankings", layout="wide")
+st.set_page_config(
+    page_title="Rankings",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 header_ui(
     title="Rankings por Categoría",
     current_page="Rankings",
-    subtitle="Top N por Proveedores y Centros, con filtros locales de Cuenta Especial y Prioritario"
+    subtitle="Top N por Proveedores y Centros, con filtros locales de Cuenta Especial y Prioritario",
+    nav_active="rankings",
 )
 
 # -------- Carga base --------
