@@ -778,7 +778,7 @@ draw_debt_panel("Pendiente de Contabilización", n2)
 st.subheader("4) Proyección de Vencimientos y Tablas de Pago")
 st.caption("Los filtros siguientes impactan esta sección y las tablas/presupuesto hacia abajo.")
 
-col_criterio, col_cuenta, col_prioritario, col_horizonte = st.columns([1.4, 1, 1, 0.6])
+col_criterio, col_cuenta, col_prioritario, col_horizonte, col_tabla = st.columns([1.4, 1, 1, 0.6, 0.7])
 
 crit_sel = col_criterio.radio(
     "Criterio de Orden",
@@ -799,6 +799,9 @@ prio_local = col_prioritario.radio(
     index=0,
 )
 horizonte = col_horizonte.number_input("Horizonte (días)", 7, 90, 30, 7)
+tabla_proyeccion_dias = col_tabla.number_input(
+    "Días tabla a proyectar", 1, int(horizonte), 3, 1
+)
 
 _LOCAL_FILTER_STATE_KEY = "presupuesto_filters_snapshot"
 _LOCAL_AMOUNT_KEY = "presupuesto_hoy"
@@ -918,10 +921,12 @@ if not df_nopag_loc.empty and "fecha_venc_30" in df_nopag_loc:
                       .reset_index()
                       .rename(columns={"fecha_venc_30": "Fecha"}))
         flujo["Flujo_Acumulado"] = flujo["Monto_a_Pagar"].cumsum()
-        st.markdown("**Proyección Próximos 3 días**")
-        small = flujo.head(3).rename(columns={"Fecha":"Día","Monto_a_Pagar":"Monto a Pagar","Cant_Facturas":"Cant. Facturas"})
+        st.markdown(f"**Proyección Próximos {int(tabla_proyeccion_dias)} días**")
+        small = flujo.head(int(tabla_proyeccion_dias)).rename(columns={"Fecha":"Día","Monto_a_Pagar":"Monto a Pagar","Cant_Facturas":"Cant. Facturas"})
         small_display = small.copy()
         small_display["Monto a Pagar"] = small_display["Monto a Pagar"].map(money)
+        if "Flujo_Acumulado" in small_display:
+            small_display["Flujo_Acumulado"] = small_display["Flujo_Acumulado"].map(money)
         small_display = sanitize_df(small_display)
         style_table(_table_style(small_display))
         fig = go.Figure()
