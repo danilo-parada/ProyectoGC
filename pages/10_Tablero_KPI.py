@@ -198,6 +198,11 @@ st.subheader("Metricas principales del periodo")
 kpi = compute_kpis(df_filtered_common)
 dic_split = compute_dic_split(df_filtered_common)
 
+docs_pagadas = kpi.get("docs_pagados")
+if docs_pagadas is None or pd.isna(docs_pagadas):
+    docs_pagadas = float(pagadas_mask_bool.sum())
+docs_pagadas = int(docs_pagadas)
+
 # ===== Base de pagos contabilizados (para DPP/DIC/DCP y promedios globales) =====
 pagadas_mask_full = pd.to_numeric(df.get("monto_pagado_real"), errors="coerce") if "monto_pagado_real" in df else pd.Series(0.0, index=df.index)
 pagadas_mask_full = pagadas_mask_full.fillna(0.0) > 0
