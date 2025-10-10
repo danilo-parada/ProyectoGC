@@ -36,7 +36,10 @@ def _metric_card(
     *,
     tooltip: Optional[str] = None,
 ) -> str:
-    extra = f'<p class="app-card__subtitle">{caption}</p>' if caption else ""
+    extra = ""
+    if caption:
+        caption_html = html.escape(caption).replace("\n", "<br>")
+        extra = f'<p class="app-card__subtitle">{caption_html}</p>'
     tooltip_attr = f' title="{html.escape(tooltip)}"' if tooltip else ""
     return (
         f'<div class="app-card"{tooltip_attr}>'
@@ -60,14 +63,20 @@ def _segment_card(
     primary: str,
     stats: List[Tuple[str, str]],
     *,
+    caption: Optional[str] = None,
     tooltip: Optional[str] = None,
 ) -> str:
     pills = "".join(_stat_pill(name, val) for name, val in stats)
     tooltip_attr = f' title="{html.escape(tooltip)}"' if tooltip else ""
+    caption_html = ""
+    if caption:
+        cap = html.escape(caption).replace("\n", "<br>")
+        caption_html = f'<p class="app-card__subtitle">{cap}</p>'
     return (
         f'<div class="app-card"{tooltip_attr}>'
         f'<div class="app-card__title">{title}</div>'
         f'<div class="app-card__value">{primary}</div>'
+        f'{caption_html}'
         f'<div class="app-inline-stats">{pills}</div>'
         '</div>'
     )
@@ -216,44 +225,73 @@ def _dic_stats_entries(dic_split: dict) -> list[tuple[str, str]]:
     contab_n = int(dic_split.get("dic_contab_unpaid_n", 0))
     no_contab_n = int(dic_split.get("no_contab_n", 0))
     return [
-        ("Pagadas", f"{pagadas_avg} • {pagadas_n:,} doc."),
-        ("Contab. sin pago", f"{contab_avg} • {contab_n:,} doc."),
-        ("No contabilizadas", f"{no_contab_n:,} doc."),
+        ("Pagadas", f"{pagadas_avg} • {pagadas_n:,} facturas"),
+        ("Contabilizada", f"{contab_avg} • {contab_n:,} facturas"),
+        ("Pendiente de contabilizacion", f"{no_contab_n:,} facturas"),
     ]
 
+
+docs_total = int(kpi.get("docs_total", 0))
+docs_pagadas = int(kpi.get("docs_pagados", 0))
+docs_sin_pago = max(docs_total - docs_pagadas, 0)
+
+facturado_stats = [
+    ("Pagado", f"{money(kpi['facturado_pagado'])} • {docs_pagadas:,} facturas"),
+    ("Sin pagar", f"{money(kpi['facturado_sin_pagar'])} • {docs_sin_pago:,} facturas"),
+]
 
 metric_cards = [
     _segment_card(
         "Facturado: Pagado vs Sin pagar",
         money(kpi["total_facturado"]),
-        [
-            ("Pagado", money(kpi["facturado_pagado"])),
-            ("Sin pagar", money(kpi["facturado_sin_pagar"])),
-        ],
+        facturado_stats,
+        caption=f"Facturas: {docs_total:,}",
         tooltip=get_tooltip("desglose_facturado"),
     ),
+]
+
+diff_pagado_facturado = kpi["total_pagado_real"] - kpi["total_facturado"]
+brecha_pct = kpi.get("brecha_pct", 0.0)
+brecha_str = "s/d" if pd.isna(brecha_pct) else f"{one_decimal(brecha_pct)}%"
+pagadas_caption = (
+    f"Pagadas: {docs_pagadas:,} facturas\n"
+    f"Diferencia contabilizado - facturado: {money(diff_pagado_facturado)} ({brecha_str})"
+)
+
+metric_cards.append(
     _metric_card(
         "Total pagado (real)",
         money(kpi["total_pagado_real"]),
-        caption=f"Pagadas: {int(kpi['docs_pagados']):,}",
+        caption=pagadas_caption,
         tooltip=get_tooltip("total_pagado_real"),
-    ),
-    _metric_card(
-        get_label("dpp_emision_pago"),
-        _fmt_days_metric(mean_dso_kpi),
-        tooltip=get_tooltip("dpp_emision_pago"),
-    ),
-    _metric_card(
-        get_label("dcp_contab_pago"),
-        _fmt_days_metric(mean_tpc_kpi),
-        tooltip=get_tooltip("dcp_contab_pago"),
-    ),
-]
+    )
+)
+
 metric_cards.append(
     _segment_card(
-        get_label("dic_emision_contab"),
-        f"{len(df_filtered_common):,} doc.",
-        _dic_stats_entries(dic_split),
+        "Resumen días promedio (Pagos)",
+        _fmt_days_metric(mean_dso_kpi),
+        [
+            (get_label("dcp_contab_pago"), _fmt_days_metric(mean_tpc_kpi)),
+            (get_label("dic_emision_contab"), _fmt_days_metric(mean_tfc_kpi)),
+        ],
+        caption=get_label("dpp_emision_pago"),
+        tooltip=get_tooltip("dpp_emision_pago"),
+    )
+)
+
+contab_unpaid_avg = _fmt_dic_avg(dic_split.get("dic_contab_unpaid_avg"))
+contab_unpaid_n = int(dic_split.get("dic_contab_unpaid_n", 0))
+no_contab_n = int(dic_split.get("no_contab_n", 0))
+
+metric_cards.append(
+    _segment_card(
+        "No Pagadas",
+        money(kpi["facturado_sin_pagar"]),
+        [
+            ("Contabilizada", f"{contab_unpaid_avg} • {contab_unpaid_n:,} facturas"),
+            ("Pendiente de contabilizacion", f"{no_contab_n:,} facturas"),
+        ],
         tooltip=get_tooltip("dic_emision_contab"),
     )
 )
