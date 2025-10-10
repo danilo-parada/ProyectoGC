@@ -314,11 +314,10 @@ def _card_html(
     tooltip_attr = f' title="{html.escape(str(tooltip))}"' if tooltip else ""
     title_html = html.escape(str(title))
     value_html = html.escape(str(value))
-    subtitle_html = (
-        f'<p class="app-card__subtitle">{html.escape(str(subtitle))}</p>'
-        if subtitle
-        else ""
-    )
+    subtitle_html = ""
+    if subtitle:
+        subtitle_html = html.escape(str(subtitle)).replace("\n", "<br>")
+        subtitle_html = f'<p class="app-card__subtitle">{subtitle_html}</p>'
     tag_html = ""
     if tag:
         tag_cls = "app-card__tag"
@@ -407,43 +406,68 @@ else:
     dic_split_total = compute_dic_split(df_filtered_common)
     total_docs = int(kpi_total["docs_total"])
     total_pagadas = int(kpi_total["docs_pagados"])
+    docs_sin_pago = max(total_docs - total_pagadas, 0)
+
+    facturado_stats = [
+        ("Pagado", f"{money(kpi_total['facturado_pagado'])} • {total_pagadas:,} facturas"),
+        ("Sin pagar", f"{money(kpi_total['facturado_sin_pagar'])} • {docs_sin_pago:,} facturas"),
+    ]
+
     cards = [
         _card_html(
-            "Desglose facturado",
+            "Facturado: Pagado vs Sin pagar",
             money(kpi_total["total_facturado"]),
-            subtitle="Pagado vs sin pagar",
-            stats=[
-                ("Pagado", money(kpi_total["facturado_pagado"])),
-                ("Sin pagar", money(kpi_total["facturado_sin_pagar"])),
-            ],
+            subtitle=f"Facturas: {total_docs:,}",
+            stats=facturado_stats,
             compact=False,
             tooltip=get_tooltip("desglose_facturado"),
         ),
+    ]
+
+    diff_pagado_facturado = kpi_total["total_pagado_real"] - kpi_total["total_facturado"]
+    brecha_pct = kpi_total.get("brecha_pct")
+    brecha_str = "s/d" if pd.isna(brecha_pct) else f"{one_decimal(brecha_pct)}%"
+    pagadas_caption = (
+        f"Diferencia contabilizado - facturado: {money(diff_pagado_facturado)} ({brecha_str})"
+    )
+
+    cards.append(
         _card_html(
             "Total pagado (real)",
             money(kpi_total["total_pagado_real"]),
-            subtitle="Facturas con pago registrado",
-            tag=f"{total_pagadas:,} pagos",
+            subtitle=pagadas_caption,
+            tag=f"Pagadas: {total_pagadas:,} facturas",
             tooltip=get_tooltip("total_pagado_real"),
-        ),
-        _card_html(
-            get_label("dpp_emision_pago"),
-            _fmt_days(kpi_total["dpp"]),
-            subtitle=get_tooltip("dpp_emision_pago"),
-        ),
-        _card_html(
-            get_label("dcp_contab_pago"),
-            _fmt_days(kpi_total["dcp"]),
-            subtitle=get_tooltip("dcp_contab_pago"),
-        ),
-    ]
+        )
+    )
+
     cards.append(
         _card_html(
-            get_label("dic_emision_contab"),
-            f"{len(df_filtered_common):,} doc.",
-            subtitle=get_tooltip("dic_emision_contab"),
-            stats=_dic_card_stats(dic_split_total),
+            "Resumen días promedio (Pagos)",
+            _fmt_days(kpi_total["dpp"]),
+            subtitle=get_label("dpp_emision_pago"),
+            stats=[
+                (get_label("dcp_contab_pago"), _fmt_days(kpi_total["dcp"])),
+                (get_label("dic_emision_contab"), _fmt_days(kpi_total["dic"])),
+            ],
+            tooltip=get_tooltip("dpp_emision_pago"),
+        )
+    )
+
+    contab_unpaid_avg = _fmt_dic_avg(dic_split_total.get("dic_contab_unpaid_avg"))
+    contab_unpaid_n = int(dic_split_total.get("dic_contab_unpaid_n", 0))
+    no_contab_n = int(dic_split_total.get("no_contab_n", 0))
+
+    cards.append(
+        _card_html(
+            "No Pagadas",
+            money(kpi_total["facturado_sin_pagar"]),
+            stats=[
+                ("Contabilizada", f"{contab_unpaid_avg} • {contab_unpaid_n:,} facturas"),
+                ("Pendiente de contabilizacion", f"{no_contab_n:,} facturas"),
+            ],
             compact=False,
+            tooltip=get_tooltip("dic_emision_contab"),
         )
     )
     _render_cards(cards)

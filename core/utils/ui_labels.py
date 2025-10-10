@@ -25,11 +25,17 @@ LABELS: Dict[str, str] = _SafeLookup(
 TOOLTIPS: Dict[str, str] = _SafeLookup(
     {
         "dpp_emision_pago": "Promedio de días entre emisión de factura y pago efectivo.",
-        "dic_emision_contab": "Promedio de días entre que una factura pase a ser contabilizada.",
+        "dic_emision_contab": (
+            "Promedio de días entre emisión y contabilización de facturas, "
+            "destacando cuáles siguen contabilizadas sin pago o pendientes."
+        ),
         "dcp_contab_pago": "Promedio de días entre contabilización y pago.",
         "total_facturado": "Incluye todo el monto facturado del periodo, incluso facturas aún sin pago.",
         "total_pagado_real": "Suma `monto_pagado_real`: usa `monto_autorizado` de la hoja Facturas cuando hay fecha de pago.",
-        "desglose_facturado": "Comparativo del monto facturado entre documentos pagados y pendientes.",
+        "desglose_facturado": (
+            "Usa la columna `monto_facturado`. Pagado considera facturas con "
+            "`monto_pagado_real` > 0; Sin pagar agrupa el resto."
+        ),
     }
 )
 
