@@ -277,6 +277,22 @@ def header_ui(title: str, current_page: str, subtitle: Optional[str] = None, *, 
     _render_mobile_nav(nav_active)
 
 
+def collapse_sidebar_immediately() -> None:
+    """Oculta por completo la barra lateral apenas se renderiza la página."""
+    safe_markdown(
+        """
+        <style>
+        [data-testid="collapsedControl"] {
+            display: none;
+        }
+        [data-testid="stSidebar"] {
+            display: none;
+        }
+        </style>
+        """
+    )
+
+
 # ============================================================
 # 5) Estado de sesion y setup basico
 # ============================================================
