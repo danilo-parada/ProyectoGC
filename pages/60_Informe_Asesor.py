@@ -929,12 +929,76 @@ if not df_nopag_loc.empty and "fecha_venc_30" in df_nopag_loc:
             small_display["Flujo_Acumulado"] = small_display["Flujo_Acumulado"].map(money)
         small_display = sanitize_df(small_display)
         style_table(_table_style(small_display))
+        accent_color = "#3f51b5"
+        accent_soft = "#9aa5ff"
+        secondary_color = "#ff7043"
+        accumulated_color = "#1e88e5"
+
+        selected_count = int(tabla_proyeccion_dias)
+        selected = flujo.iloc[:selected_count]
+
         fig = go.Figure()
-        fig.add_bar(x=flujo["Fecha"], y=flujo["Monto_a_Pagar"], name="Monto Diario")
-        fig.add_scatter(x=flujo["Fecha"], y=flujo["Cant_Facturas"], name="Cant. Facturas", yaxis="y2")
-        fig.add_scatter(x=flujo["Fecha"], y=flujo["Flujo_Acumulado"], name="Acumulado", line=dict(dash="dash"))
-        fig.update_layout(height=380, yaxis=dict(title="Monto ($)"),
-                          yaxis2=dict(overlaying="y", side="right", title="Cant."))
+        # Barras para la cantidad de facturas (eje secundario)
+        fig.add_bar(
+            x=flujo["Fecha"],
+            y=flujo["Cant_Facturas"],
+            name="Cant. Facturas",
+            yaxis="y2",
+            marker=dict(color=[accent_color if i < selected_count else accent_soft for i in range(len(flujo))],
+                        line=dict(color="#2c3c8f", width=0.5)),
+            opacity=0.85,
+        )
+
+        # Línea del monto diario (eje principal)
+        fig.add_scatter(
+            x=flujo["Fecha"],
+            y=flujo["Monto_a_Pagar"],
+            name="Monto Diario",
+            mode="lines",
+            line=dict(color=secondary_color, width=3, shape="spline"),
+        )
+
+        # Línea del monto acumulado
+        fig.add_scatter(
+            x=flujo["Fecha"],
+            y=flujo["Flujo_Acumulado"],
+            name="Acumulado",
+            mode="lines",
+            line=dict(color=accumulated_color, width=3, dash="dash"),
+        )
+
+        # Marcadores destacados para la proyección seleccionada
+        if not selected.empty:
+            fig.add_scatter(
+                x=selected["Fecha"],
+                y=selected["Monto_a_Pagar"],
+                mode="markers+text",
+                name="Monto Selección",
+                marker=dict(size=12, color=secondary_color, line=dict(color="#ffffff", width=2)),
+                text=selected["Monto_a_Pagar"].map(money),
+                textposition="top center",
+                hovertemplate="<b>%{x}</b><br>Monto: %{text}<extra></extra>",
+                showlegend=False,
+            )
+
+        fig.update_layout(
+            height=420,
+            template="plotly_white",
+            bargap=0.25,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(t=60, b=40, l=50, r=50),
+            yaxis=dict(title="Monto ($)", zeroline=False, showgrid=True, gridcolor="rgba(63, 81, 181, 0.12)"),
+            yaxis2=dict(
+                overlaying="y",
+                side="right",
+                title="Cantidad",
+                zeroline=False,
+                showgrid=False,
+            ),
+            xaxis=dict(showgrid=False),
+            plot_bgcolor="rgba(248, 250, 255, 0.9)",
+            paper_bgcolor="rgba(255, 255, 255, 1)",
+        )
         st.plotly_chart(fig, use_container_width=True)
         fig_proyeccion = fig
     else:
