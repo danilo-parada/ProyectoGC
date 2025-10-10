@@ -703,8 +703,16 @@ def _deuda_detalle_metrics(dfin: pd.DataFrame) -> dict[str, float]:
 if df_nopag_all.empty:
     st.info("No hay documentos pendientes.")
 else:
-    n1 = df_nopag_all[df_nopag_all["Nivel"].eq("Doc. Autorizado p/ Pago")] if "Nivel" in df_nopag_all else df_nopag_all.iloc[0:0]
-    n2 = df_nopag_all[df_nopag_all["Nivel"].eq("Doc. Pendiente de Autorización")] if "Nivel" in df_nopag_all else df_nopag_all.iloc[0:0]
+    n1 = (
+        df_nopag_all[df_nopag_all["Nivel"].eq("Contabilizado Pendiente de Pago")]
+        if "Nivel" in df_nopag_all
+        else df_nopag_all.iloc[0:0]
+    )
+    n2 = (
+        df_nopag_all[df_nopag_all["Nivel"].eq("Pendiente de Contabilización")]
+        if "Nivel" in df_nopag_all
+        else df_nopag_all.iloc[0:0]
+    )
 
 def draw_debt_panel(title: str, dpanel: pd.DataFrame):
     safe_markdown(
@@ -747,8 +755,8 @@ def draw_debt_panel(title: str, dpanel: pd.DataFrame):
         )
     _render_cards(cards, layout="grid-2")
 
-draw_debt_panel("Doc. Autorizado p/ Pago", n1)
-draw_debt_panel("Doc. Pendiente de Autorizacion", n2)
+draw_debt_panel("Contabilizado Pendiente de Pago", n1)
+draw_debt_panel("Pendiente de Contabilización", n2)
 
 
 # =========================================================
@@ -831,7 +839,7 @@ def _prioritize_documents(dfin: pd.DataFrame, criterio: str) -> pd.DataFrame:
 
     if "Nivel" in out:
         out["_nivel_rank"] = out["Nivel"].map(
-            {"Doc. Pendiente de Autorización": 0, "Doc. Autorizado p/ Pago": 1}
+            {"Pendiente de Contabilización": 0, "Contabilizado Pendiente de Pago": 1}
         ).fillna(2)
     else:
         out["_nivel_rank"] = 2
