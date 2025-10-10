@@ -13,8 +13,7 @@ from core.utils import LABELS, TOOLTIPS
 from lib_common import (
     get_df_norm, general_date_filters_ui,
     advanced_filters_ui, money, one_decimal, header_ui,
-    ESTADO_LABEL, sanitize_df, safe_markdown,
-    collapse_sidebar_immediately,
+    ESTADO_LABEL, sanitize_df, safe_markdown
 )
 from lib_metrics import (
     ensure_derived_fields,
@@ -108,14 +107,9 @@ def _render_percentile_cards(items: List[Tuple[str, str, Optional[str]]]):
             '</div>'
         )
     safe_markdown('<div class="app-percentile-grid">' + "".join(cards) + '</div>')
-    # línea promedio LOCAL
+   # línea promedio LOCAL
 
-st.set_page_config(
-    page_title="Tablero KPI",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
-collapse_sidebar_immediately()
+st.set_page_config(page_title="Tablero KPI", layout="wide")
 header_ui(
     "Métricas de Pagos y Ciclo de Facturas",
     current_page="Resumen facturas",
@@ -281,13 +275,18 @@ if "cuenta_especial" in df_filtered_common.columns:
 
         stats = [
             ("Documentos", f"{int(k['docs_total']):,}"),
-            ("Total pagado (real)", money(k["total_pagado_real"])),
+            ("Monto pagado (real)", money(k["total_pagado_real"])),
             (LABELS["dpp_emision_pago"], _fmt_days_metric(k["dpp"])),
             (LABELS["dcp_contab_pago"], _fmt_days_metric(k["dcp"])),
+            (LABELS["dic_emision_contab"], _fmt_days_metric(k["dic"])),
         ]
         stats.extend(_dic_stats_entries(dic_split_seg))
         segment_cards.append(
-            _segment_card(title, money(k["total_facturado"]), stats)
+            _segment_card(
+                title,
+                f"Monto facturado: {money(k['total_facturado'])}",
+                stats,
+            )
         )
 
     if segment_cards:

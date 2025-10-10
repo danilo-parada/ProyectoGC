@@ -32,7 +32,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
-collapse_sidebar_immediately()
 header_ui(
     title="Informe para la Toma de Decisiones Financieras",
     current_page="Informe Asesor",
@@ -458,16 +457,17 @@ else:
             k = compute_kpis(sub)
             dic_split_seg = compute_dic_split(sub)
             stats = [
-                ("Total pagado (real)", money(k["total_pagado_real"])),
+                ("Monto pagado (real)", money(k["total_pagado_real"])),
                 (LABELS["dpp_emision_pago"], _fmt_days(k["dpp"])),
                 (LABELS["dcp_contab_pago"], _fmt_days(k["dcp"])),
+                (LABELS["dic_emision_contab"], _fmt_days(k["dic"])),
             ]
             stats.extend(_dic_card_stats(dic_split_seg))
             segment_cards.append(
                 _card_html(
                     title=f"CE {'Si' if flag else 'No'}",
-                    value=money(k["total_facturado"]),
-                    subtitle=f"{int(k['docs_total']):,} doc.",
+                    value=f"Monto facturado: {money(k['total_facturado'])}",
+                    subtitle=f"Documentos: {int(k['docs_total']):,}",
                     stats=stats,
                     compact=False,
                     tone="accent" if flag else "default",
@@ -548,6 +548,65 @@ def _kpis_deuda(dfin: pd.DataFrame) -> dict:
     porv, c_p = _agg_block(dfin, dfin["dias_a_vencer"] > 0)
     return dict(vencido=vencido, c_venc=c_v, hoy=hoy_m, c_hoy=c_h, por_ven=porv, c_por=c_p)
 
+
+def _avg_days_from_series(series: pd.Series) -> float:
+    if series is None or series.empty:
+        return float("nan")
+    clean = pd.to_numeric(series, errors="coerce")
+    clean = clean[clean.notna() & (clean >= 0)]
+    if clean.empty:
+        return float("nan")
+    return float(np.round(clean.mean(), 1))
+
+
+def _deuda_detalle_metrics(dfin: pd.DataFrame) -> dict[str, float]:
+    if dfin is None or dfin.empty:
+        return {
+            "total_monto": 0.0,
+            "total_docs": 0,
+            "contab_monto": 0.0,
+            "contab_docs": 0,
+            "contab_dias": float("nan"),
+            "sincontab_monto": 0.0,
+            "sincontab_docs": 0,
+            "sincontab_dias": float("nan"),
+        }
+
+    d = dfin.copy()
+    deuda = pd.to_numeric(d.get("importe_deuda"), errors="coerce").fillna(0.0)
+    d["importe_deuda_num"] = deuda
+
+    fecha_contab_raw = d.get("fecha_cc")
+    if fecha_contab_raw is None:
+        fecha_contab_raw = d.get("fecha_contabilizacion")
+    fecha_contab = pd.to_datetime(fecha_contab_raw, errors="coerce")
+
+    fecha_fact_raw = d.get("fac_fecha_factura")
+    if fecha_fact_raw is None:
+        fecha_fact_raw = d.get("fecha_emision")
+    fecha_fact = pd.to_datetime(fecha_fact_raw, errors="coerce")
+
+    contab = d[fecha_contab.notna()].copy()
+    contab_monto = float(contab["importe_deuda_num"].sum())
+    contab_docs = int(len(contab))
+    contab_dias = _avg_days_from_series((TODAY - fecha_contab[fecha_contab.notna()]).dt.days)
+
+    sincontab = d[fecha_contab.isna()].copy()
+    sincontab_monto = float(sincontab["importe_deuda_num"].sum())
+    sincontab_docs = int(len(sincontab))
+    sincontab_dias = _avg_days_from_series((TODAY - fecha_fact[fecha_contab.isna()]).dt.days)
+
+    return {
+        "total_monto": float(deuda.sum()),
+        "total_docs": int(len(d)),
+        "contab_monto": contab_monto,
+        "contab_docs": contab_docs,
+        "contab_dias": contab_dias,
+        "sincontab_monto": sincontab_monto,
+        "sincontab_docs": sincontab_docs,
+        "sincontab_dias": sincontab_dias,
+    }
+
 if df_nopag_all.empty:
     st.info("No hay documentos pendientes.")
 else:
@@ -567,17 +626,27 @@ def draw_debt_panel(title: str, dpanel: pd.DataFrame):
     for flag in (True, False):
         sub = dpanel[dpanel["cuenta_especial"] == flag]
         kk = _kpis_deuda(sub)
-        total = kk["vencido"] + kk["hoy"] + kk["por_ven"]
+        detalle = _deuda_detalle_metrics(sub)
         stats = [
-            ("Vencida", f"{money(kk['vencido'])} | {_fmt_count(kk['c_venc'])}"),
-            ("Hoy", f"{money(kk['hoy'])} | {_fmt_count(kk['c_hoy'])}"),
-            ("Por vencer", f"{money(kk['por_ven'])} | {_fmt_count(kk['c_por'])}"),
+            (
+                "Monto contabilizado",
+                f"{money(detalle['contab_monto'])} • {_fmt_count(detalle['contab_docs'])}",
+            ),
+            ("Días prom. sin pagar", _fmt_days(detalle["contab_dias"])),
+            (
+                "Monto pendiente de contabilización",
+                f"{money(detalle['sincontab_monto'])} • {_fmt_count(detalle['sincontab_docs'])}",
+            ),
+            ("Días prom. sin contabilizar", _fmt_days(detalle["sincontab_dias"])),
+            ("Vencida", f"{money(kk['vencido'])} • {_fmt_count(kk['c_venc'])}"),
+            ("Hoy", f"{money(kk['hoy'])} • {_fmt_count(kk['c_hoy'])}"),
+            ("Por vencer", f"{money(kk['por_ven'])} • {_fmt_count(kk['c_por'])}"),
         ]
         cards.append(
             _card_html(
                 title=f"CE {'Si' if flag else 'No'}",
-                value=money(total),
-                subtitle=f"{len(sub):,} doc." if len(sub) else "0 doc.",
+                value=f"Total pendiente: {money(detalle['total_monto'])}",
+                subtitle=f"Cantidad total pendiente: {detalle['total_docs']:,} doc.",
                 stats=stats,
                 compact=False,
                 tone="accent" if flag else "default",

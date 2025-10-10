@@ -28,7 +28,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
-collapse_sidebar_immediately()
 header_ui(
     title="Rankings por Categoría",
     current_page="Rankings",

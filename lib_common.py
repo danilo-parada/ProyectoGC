@@ -258,30 +258,6 @@ def load_ui_theme():
     if _THEME_CSS_CACHE:
         safe_markdown(f"<style>{_THEME_CSS_CACHE}</style>")
 
-
-def collapse_sidebar_immediately():
-    """Cierra la barra lateral sin animaciones para evitar parpadeos."""
-    css = """
-    <style>
-    [data-testid="stSidebar"] {
-        transition: none !important;
-    }
-    [data-testid="stAppViewContainer"] > .main {
-        transition: margin-left 0ms !important;
-    }
-    </style>
-    """
-    js = """
-    <script>
-    const frame = window.parent;
-    if (frame) {
-        frame.postMessage({type: 'streamlit:setSidebarState', data: {expanded: false}}, '*');
-    }
-    </script>
-    """
-    safe_markdown(css + js)
-
-
 def header_ui(title: str, current_page: str, subtitle: Optional[str] = None, *, nav_active: Optional[str] = None):
     load_ui_theme()
     safe_title = html.escape(str(title))
