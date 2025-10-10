@@ -253,11 +253,20 @@ def _agg_block(d: pd.DataFrame, mask):
 
 def _compute_presupuesto_selection(
     prior: pd.DataFrame, presupuesto: float
-) -> Tuple[pd.DataFrame, float, float, Optional[dict]]:
-    """Devuelve selección acumulada, suma, saldo restante y próxima factura."""
+) -> Tuple[pd.DataFrame, float, float, Optional[dict], dict]:
+    """Devuelve selección acumulada, suma, saldo restante y próximos ajustes."""
+
+    presupuesto_val = float(presupuesto)
 
     if prior is None or prior.empty:
-        return pd.DataFrame(), 0.0, float(presupuesto), None
+        empty_info = {
+            "count": 0,
+            "remaining_amount": 0.0,
+            "full_budget": 0.0,
+            "missing_budget": 0.0,
+            "selected_count": 0,
+        }
+        return pd.DataFrame(), 0.0, presupuesto_val, None, empty_info
 
     tmp = prior.copy()
     tmp["importe_regla_num"] = pd.to_numeric(
@@ -265,17 +274,19 @@ def _compute_presupuesto_selection(
     ).fillna(0.0)
     tmp["acum"] = tmp["importe_regla_num"].cumsum()
 
-    seleccion = tmp[tmp["acum"] <= float(presupuesto)].drop(
+    tolerance = 1e-6
+    selected_mask = tmp["acum"] <= presupuesto_val + tolerance
+    seleccion = tmp[selected_mask].drop(
         columns=["acum", "importe_regla_num"], errors="ignore"
     )
-    suma_sel = float(
-        tmp.loc[tmp["acum"] <= float(presupuesto), "importe_regla_num"].sum()
-    )
+    suma_sel = float(tmp.loc[selected_mask, "importe_regla_num"].sum())
 
-    restante_raw = float(presupuesto) - suma_sel
+    restante_raw = presupuesto_val - suma_sel
     restante = max(0.0, restante_raw)
 
-    siguiente = tmp[tmp["acum"] > float(presupuesto)].head(1)
+    pendientes_mask = ~selected_mask
+    pendientes = tmp[pendientes_mask]
+    siguiente = pendientes.head(1)
     next_info = None
     if not siguiente.empty:
         row = siguiente.iloc[0]
@@ -292,7 +303,18 @@ def _compute_presupuesto_selection(
             "adicional": adicional,
         }
 
-    return seleccion, suma_sel, restante, next_info
+    remaining_amount = float(tmp.loc[pendientes_mask, "importe_regla_num"].sum())
+    full_budget = float(tmp["acum"].max()) if not tmp.empty else 0.0
+    missing_budget = max(0.0, full_budget - presupuesto_val)
+    extra_info = {
+        "count": int(pendientes_mask.sum()),
+        "remaining_amount": remaining_amount,
+        "full_budget": full_budget,
+        "missing_budget": missing_budget,
+        "selected_count": int(selected_mask.sum()),
+    }
+
+    return seleccion, suma_sel, restante, next_info, extra_info
 
 def _card_html(
     title: str,
@@ -1112,7 +1134,13 @@ else:
                     st.rerun()
                 except AttributeError:
                     st.experimental_rerun()
-        seleccion_df, suma_sel, restante, next_info = _compute_presupuesto_selection(
+        (
+            seleccion_df,
+            suma_sel,
+            restante,
+            next_info,
+            pendientes_info,
+        ) = _compute_presupuesto_selection(
             prior, float(monto_presu)
         )
         with col_resume:
@@ -1128,6 +1156,12 @@ else:
                 )
                 safe_markdown(resume_html)
             with action_col:
+                pendientes_count = int(pendientes_info.get("count", 0))
+                missing_budget_all = float(pendientes_info.get("missing_budget", 0.0))
+                full_budget = float(pendientes_info.get("full_budget", 0.0))
+                remaining_amount_all = float(
+                    pendientes_info.get("remaining_amount", 0.0)
+                )
                 if next_info:
                     help_text = (
                         f"Se sumarán {money(next_info['adicional'])} para incorporar la próxima factura."
@@ -1158,6 +1192,35 @@ else:
                 else:
                     safe_markdown(
                         "<p class='budget-panel__resume-note budget-panel__resume-note--muted'>No hay facturas adicionales por agregar.</p>"
+                    )
+                if pendientes_count > 0 and missing_budget_all > 1e-6:
+                    total_help = (
+                        "Agregar todas las facturas restantes "
+                        + f"({pendientes_count} pendientes, {money(remaining_amount_all)})."
+                    )
+                    button_help = (
+                        "El presupuesto se ajustará para cubrir todas las candidatas. "
+                        + f"Nuevo total: {money(full_budget)}."
+                    )
+                    if st.button(
+                        "🧾 Agregar todas las facturas restantes",
+                        key="add_all_invoices",
+                        help=button_help,
+                        use_container_width=True,
+                    ):
+                        nuevo_monto = float(monto_presu + missing_budget_all)
+                        st.session_state[_LOCAL_AMOUNT_KEY] = nuevo_monto
+                        st.session_state[budget_input_key] = _format_currency_plain(
+                            nuevo_monto
+                        )
+                        try:
+                            st.rerun()
+                        except AttributeError:
+                            st.experimental_rerun()
+                    safe_markdown(
+                        "<p class='budget-panel__resume-note budget-panel__resume-note--muted'>"
+                        + total_help
+                        + "</p>"
                     )
         safe_markdown(
             """
