@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from core.utils import LABELS, TOOLTIPS
+from core.utils import get_label, get_tooltip
 from lib_common import (
     get_df_norm, general_date_filters_ui,
     advanced_filters_ui, money, one_decimal, header_ui,
@@ -230,31 +230,31 @@ metric_cards = [
             ("Pagado", money(kpi["facturado_pagado"])),
             ("Sin pagar", money(kpi["facturado_sin_pagar"])),
         ],
-        tooltip=TOOLTIPS["desglose_facturado"],
+        tooltip=get_tooltip("desglose_facturado"),
     ),
     _metric_card(
         "Total pagado (real)",
         money(kpi["total_pagado_real"]),
         caption=f"Pagadas: {int(kpi['docs_pagados']):,}",
-        tooltip=TOOLTIPS["total_pagado_real"],
+        tooltip=get_tooltip("total_pagado_real"),
     ),
     _metric_card(
-        LABELS["dpp_emision_pago"],
+        get_label("dpp_emision_pago"),
         _fmt_days_metric(mean_dso_kpi),
-        tooltip=TOOLTIPS["dpp_emision_pago"],
+        tooltip=get_tooltip("dpp_emision_pago"),
     ),
     _metric_card(
-        LABELS["dcp_contab_pago"],
+        get_label("dcp_contab_pago"),
         _fmt_days_metric(mean_tpc_kpi),
-        tooltip=TOOLTIPS["dcp_contab_pago"],
+        tooltip=get_tooltip("dcp_contab_pago"),
     ),
 ]
 metric_cards.append(
     _segment_card(
-        LABELS["dic_emision_contab"],
+        get_label("dic_emision_contab"),
         f"{len(df_filtered_common):,} doc.",
         _dic_stats_entries(dic_split),
-        tooltip=TOOLTIPS["dic_emision_contab"],
+        tooltip=get_tooltip("dic_emision_contab"),
     )
 )
 safe_markdown('<div class="app-card-grid">' + "".join(metric_cards) + '</div>')
@@ -276,9 +276,9 @@ if "cuenta_especial" in df_filtered_common.columns:
         stats = [
             ("Documentos", f"{int(k['docs_total']):,}"),
             ("Monto pagado (real)", money(k["total_pagado_real"])),
-            (LABELS["dpp_emision_pago"], _fmt_days_metric(k["dpp"])),
-            (LABELS["dcp_contab_pago"], _fmt_days_metric(k["dcp"])),
-            (LABELS["dic_emision_contab"], _fmt_days_metric(k["dic"])),
+            (get_label("dpp_emision_pago"), _fmt_days_metric(k["dpp"])),
+            (get_label("dcp_contab_pago"), _fmt_days_metric(k["dcp"])),
+            (get_label("dic_emision_contab"), _fmt_days_metric(k["dic"])),
         ]
         stats.extend(_dic_stats_entries(dic_split_seg))
         segment_cards.append(
@@ -395,12 +395,12 @@ if dso_loc.notna().any():
     ])
 
     fig_dso, _ = _hist_with_two_means(dso_loc, bins_pag, BLUE, max_dias_pag,
-                                      f"Emisión → Pago • {LABELS['dpp_emision_pago']}",
+                                      f"Emisión → Pago • {get_label('dpp_emision_pago')}",
                                       mean_global=mean_dso_kpi, mean_local=mean_dso_loc)
     st.plotly_chart(fig_dso, use_container_width=True)
 
     # Nota de validez (N total / usados / excluidos negativos)
-    _validity_note(dso_loc, LABELS["dpp_emision_pago"])
+    _validity_note(dso_loc, get_label("dpp_emision_pago"))
 
     n_total, n_le, n_gt, p50, p75, p90 = _stats_and_counts(dso_loc, max_dias_pag)
     _render_percentile_cards([
@@ -419,12 +419,12 @@ colA, colB = st.columns(2)
 with colA:
     if tfc_loc.notna().any():
         fig_tfc, _ = _hist_with_two_means(tfc_loc, bins_pag, BLUE, max_dias_pag,
-                                          f"Emisión → Contabilización • {LABELS['dic_emision_contab']}",
+                                          f"Emisión → Contabilización • {get_label('dic_emision_contab')}",
                                           mean_global=mean_tfc_kpi, mean_local=mean_tfc_loc)
         st.plotly_chart(fig_tfc, use_container_width=True)
 
         # Nota de validez
-        _validity_note(tfc_loc, LABELS["dic_emision_contab"])
+        _validity_note(tfc_loc, get_label("dic_emision_contab"))
 
         n_total, n_le, n_gt, p50, p75, p90 = _stats_and_counts(tfc_loc, max_dias_pag)
         _render_percentile_cards([
@@ -440,12 +440,12 @@ with colA:
 with colB:
     if tpc_loc.notna().any():
         fig_tpc, _ = _hist_with_two_means(tpc_loc, bins_pag, BLUE, max_dias_pag,
-                                          f"Contabilización → Pago • {LABELS['dcp_contab_pago']}",
+                                          f"Contabilización → Pago • {get_label('dcp_contab_pago')}",
                                           mean_global=mean_tpc_kpi, mean_local=mean_tpc_loc)
         st.plotly_chart(fig_tpc, use_container_width=True)
 
         # Nota de validez
-        _validity_note(tpc_loc, LABELS["dcp_contab_pago"])
+        _validity_note(tpc_loc, get_label("dcp_contab_pago"))
 
         n_total, n_le, n_gt, p50, p75, p90 = _stats_and_counts(tpc_loc, max_dias_pag)
         _render_percentile_cards([

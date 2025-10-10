@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Optional
 
 
 class _SafeLookup(dict):
@@ -33,4 +33,27 @@ TOOLTIPS: Dict[str, str] = _SafeLookup(
     }
 )
 
-__all__ = ["LABELS", "TOOLTIPS"]
+def get_label(key: str, default: Optional[str] = None) -> str:
+    """Return a human friendly label for ``key``.
+
+    ``default`` allows callers to provide a fallback when the key is unknown.
+    When ``default`` is ``None`` the original key is returned so the UI can
+    still render something meaningful instead of failing with ``KeyError``.
+    """
+
+    if default is None:
+        default = key
+    return LABELS.get(key, default)
+
+
+def get_tooltip(key: str, default: str = "") -> str:
+    """Return the tooltip text associated with ``key``.
+
+    Missing tooltips yield ``default`` (empty string by default) instead of
+    raising ``KeyError`` which previously crashed the Streamlit page.
+    """
+
+    return TOOLTIPS.get(key, default)
+
+
+__all__ = ["LABELS", "TOOLTIPS", "get_label", "get_tooltip"]
