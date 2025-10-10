@@ -202,6 +202,11 @@ docs_pagadas = kpi.get("docs_pagados")
 if docs_pagadas is None or pd.isna(docs_pagadas):
     docs_pagadas = float(pagadas_mask_bool.sum())
 docs_pagadas = int(docs_pagadas)
+docs_total = kpi.get("docs_total")
+if docs_total is None or pd.isna(docs_total):
+    docs_total = float(len(df_filtered_common))
+docs_total = int(docs_total)
+docs_no_pagadas = max(docs_total - docs_pagadas, 0)
 
 # ===== Base de pagos contabilizados (para DPP/DIC/DCP y promedios globales) =====
 pagadas_mask_full = pd.to_numeric(df.get("monto_pagado_real"), errors="coerce") if "monto_pagado_real" in df else pd.Series(0.0, index=df.index)
@@ -241,8 +246,15 @@ metric_cards = [
         "Facturado: Pagado vs Sin pagar",
         money(kpi["total_facturado"]),
         [
-            ("Pagado", money(kpi["facturado_pagado"])),
-            ("Sin pagar", money(kpi["facturado_sin_pagar"])),
+            ("Facturas totales", f"{docs_total:,} facturas"),
+            (
+                "Pagado",
+                f"{money(kpi['facturado_pagado'])} • {docs_pagadas:,} facturas",
+            ),
+            (
+                "Sin pagar",
+                f"{money(kpi['facturado_sin_pagar'])} • {docs_no_pagadas:,} facturas",
+            ),
         ],
         tooltip=get_tooltip("desglose_facturado"),
     ),
