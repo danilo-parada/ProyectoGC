@@ -275,13 +275,18 @@ if "cuenta_especial" in df_filtered_common.columns:
 
         stats = [
             ("Documentos", f"{int(k['docs_total']):,}"),
-            ("Total pagado (real)", money(k["total_pagado_real"])),
+            ("Monto pagado (real)", money(k["total_pagado_real"])),
             (LABELS["dpp_emision_pago"], _fmt_days_metric(k["dpp"])),
             (LABELS["dcp_contab_pago"], _fmt_days_metric(k["dcp"])),
+            (LABELS["dic_emision_contab"], _fmt_days_metric(k["dic"])),
         ]
         stats.extend(_dic_stats_entries(dic_split_seg))
         segment_cards.append(
-            _segment_card(title, money(k["total_facturado"]), stats)
+            _segment_card(
+                title,
+                f"Monto facturado: {money(k['total_facturado'])}",
+                stats,
+            )
         )
 
     if segment_cards:
