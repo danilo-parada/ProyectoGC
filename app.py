@@ -19,11 +19,7 @@ from lib_common import (
     get_match_summary,
 )
 
-st.set_page_config(
-    page_title="Carga de Data",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+st.set_page_config(page_title="Carga de Data", layout="wide")
 header_ui(
     "Carga de Data",
     current_page="Inicio",

@@ -107,13 +107,9 @@ def _render_percentile_cards(items: List[Tuple[str, str, Optional[str]]]):
             '</div>'
         )
     safe_markdown('<div class="app-percentile-grid">' + "".join(cards) + '</div>')
-    # línea promedio LOCAL
+   # línea promedio LOCAL
 
-st.set_page_config(
-    page_title="Tablero KPI",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+st.set_page_config(page_title="Tablero KPI", layout="wide")
 header_ui(
     "Métricas de Pagos y Ciclo de Facturas",
     current_page="Resumen facturas",
