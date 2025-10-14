@@ -291,7 +291,11 @@ with tab_cta:
                 st.info("Se actualizo la marca de Cuenta Especial en la base cargada.")
         except Exception as e:
             st.error(f"No se pudo leer la maestra de cuentas: {e}")
-    with st.expander("Vista previa maestra (200 filas)", expanded=False):
+    cta_preview_open = False
+    if isinstance(ss.get("df_ctaes_raw"), pd.DataFrame):
+        df_cta_preview = ss["df_ctaes_raw"]
+        cta_preview_open = not df_cta_preview.empty
+    with st.expander("Vista previa maestra (200 filas)", expanded=cta_preview_open):
         if isinstance(ss.get("df_ctaes_raw"), pd.DataFrame):
             style_table(sanitize_df(ss["df_ctaes_raw"].head(200)))
 
@@ -321,7 +325,11 @@ with tab_prov:
                 st.info("Se actualizo la marca de Proveedor Prioritario en la base cargada.")
         except Exception as e:
             st.error(f"No se pudo leer el archivo de proveedores prioritarios: {e}")
-    with st.expander("Vista previa proveedores prioritarios", expanded=False):
+    prio_preview_open = False
+    if isinstance(ss.get("df_prio_raw"), pd.DataFrame):
+        df_prio_preview = ss["df_prio_raw"]
+        prio_preview_open = not df_prio_preview.empty
+    with st.expander("Vista previa proveedores prioritarios", expanded=prio_preview_open):
         if isinstance(ss.get("df_prio_raw"), pd.DataFrame):
             style_table(sanitize_df(ss["df_prio_raw"].head(200)))
 
@@ -379,7 +387,11 @@ with tab_fact:
         except Exception as e:
             st.error(f"Error durante la carga o normalizacion: {e}")
 
-    with st.expander("Base normalizada (vista previa 200 filas)", expanded=False):
+    fact_preview_open = False
+    if isinstance(ss.get("df"), pd.DataFrame):
+        df_fact_preview = ss["df"]
+        fact_preview_open = not df_fact_preview.empty
+    with st.expander("Base normalizada (vista previa 200 filas)", expanded=fact_preview_open):
         if isinstance(ss.get("df"), pd.DataFrame):
             style_table(sanitize_df(ss["df"].head(200)))
 
@@ -485,7 +497,11 @@ with tab_hon:
     elif not honorarios_cargados:
         ss["honorarios_summary"] = None
 
-    with st.expander("Honorarios normalizados (vista previa)", expanded=False):
+    hon_preview_open = False
+    df_hon_norm = ss.get("honorarios")
+    if isinstance(df_hon_norm, pd.DataFrame):
+        hon_preview_open = not df_hon_norm.empty
+    with st.expander("Honorarios normalizados (vista previa)", expanded=hon_preview_open):
         df_hon_norm = ss.get("honorarios")
         if isinstance(df_hon_norm, pd.DataFrame) and not df_hon_norm.empty:
             style_table(sanitize_df(df_hon_norm.head(200)))
