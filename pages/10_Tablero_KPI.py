@@ -29,6 +29,39 @@ RED  = "#e57373"   # no pagadas
 PURP = "#8e44ad"   # línea promedio GLOBAL
 GRN  = "#2ecc71"
 
+
+def _build_header_subtitle(df: Optional[pd.DataFrame]) -> str:
+    base = "Resumen de indicadores generales de facturas"
+    if df is None:
+        return (
+            base
+            + " - Datos cargados sin rango de fechas de factura disponible; la Fecha de "
+            "Factura se muestra en formato dd-mm-yyyy."
+        )
+
+    fac_dates = pd.to_datetime(
+        df.get("fac_fecha_factura", pd.Series(dtype="datetime64[ns]")),
+        errors="coerce",
+    ).dropna()
+
+    if fac_dates.empty:
+        return (
+            base
+            + " - Datos cargados sin rango de fechas de factura disponible; la Fecha de "
+            "Factura se muestra en formato dd-mm-yyyy."
+        )
+
+    fac_start = fac_dates.min().strftime("%d-%m-%Y")
+    fac_end = fac_dates.max().strftime("%d-%m-%Y")
+    return (
+        base
+        + " - Datos cargados desde la Fecha Inicio Factura ("
+        + fac_start
+        + ") hasta la Fecha Fin Factura ("
+        + fac_end
+        + "); la Fecha de Factura se muestra en formato dd-mm-yyyy."
+    )
+
 def _metric_card(
     title: str,
     value: str,
@@ -119,10 +152,13 @@ def _render_percentile_cards(items: List[Tuple[str, str, Optional[str]]]):
    # línea promedio LOCAL
 
 st.set_page_config(page_title="Tablero KPI", layout="wide")
+
+df0 = get_df_norm()
+
 header_ui(
     "Métricas de Pagos y Ciclo de Facturas",
     current_page="Resumen facturas",
-    subtitle="Resumen de indicadores generales de facturas",
+    subtitle=_build_header_subtitle(df0),
     nav_active="tablero",
 )
 
@@ -149,7 +185,6 @@ def _subset_by_ce(dfin: pd.DataFrame, choice: str) -> pd.DataFrame:
     return dfin
 
 # ===================== Carga base =====================
-df0 = get_df_norm()
 if df0 is None:
     st.warning("Cargue y mapee datos en 'Carga de Data'.")
     st.stop()
