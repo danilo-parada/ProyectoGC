@@ -33,9 +33,28 @@ header_ui(
 init_session_keys()
 ss = st.session_state
 
-def _flash_and_rerun(level: str, message: str) -> None:
+TAB_LABELS = [
+    "1. Cuentas especiales",
+    "2. Proveedores prioritarios",
+    "3. Facturas",
+    "4. Honorarios",
+]
+
+ss.setdefault("_active_tab", TAB_LABELS[0])
+
+
+def _set_active_tab(label: str) -> None:
+    """Persist the tab that should remain selected after a rerun."""
+
+    if label in TAB_LABELS:
+        ss["_active_tab"] = label
+
+
+def _flash_and_rerun(level: str, message: str, *, tab: Optional[str] = None) -> None:
     """Persist a flash message and trigger UI refresh."""
     ss["_ui_flash"] = (level, message)
+    if tab:
+        _set_active_tab(tab)
     try:
         st.rerun()
     except AttributeError:
@@ -256,12 +275,7 @@ if flash_payload:
     notifier = getattr(st, level, st.info)
     notifier(message)
 
-tab_cta, tab_prov, tab_fact, tab_hon = st.tabs([
-    "1. Cuentas especiales",
-    "2. Proveedores prioritarios",
-    "3. Facturas",
-    "4. Honorarios",
-])
+tab_cta, tab_prov, tab_fact, tab_hon = st.tabs(TAB_LABELS, default=ss.get("_active_tab"))
 
 with tab_cta:
     st.markdown("#### 1. Maestra de cuentas (obligatorio)")
@@ -280,6 +294,7 @@ with tab_cta:
         key="upload_ctaes",
     )
     if maestra_file is not None:
+        _set_active_tab(TAB_LABELS[0])
         try:
             df_ctaes = read_any(maestra_file)
             load_cuentas_especiales(df_ctaes, col_codigo_contable="codigo_contable")
@@ -314,6 +329,7 @@ with tab_prov:
         key="upload_prio",
     )
     if prov_file is not None:
+        _set_active_tab(TAB_LABELS[1])
         try:
             df_prov = read_any(prov_file)
             load_proveedores_prioritarios(df_prov, col_codigo="codigo_proveedor")
@@ -351,6 +367,7 @@ with tab_fact:
     )
 
     if files:
+        _set_active_tab(TAB_LABELS[2])
         try:
             df_list = [read_any(f) for f in files]
             df_raw = pd.concat(df_list, ignore_index=True)
@@ -366,6 +383,7 @@ with tab_fact:
             )
 
             if st.button("Aplicar mapeo y normalizacion", type="primary"):
+                _set_active_tab(TAB_LABELS[2])
                 if not ok:
                     st.error("Falta asignar fac_fecha_factura en el mapeo. Corrige y vuelve a intentar.")
                 else:
@@ -383,6 +401,7 @@ with tab_fact:
                     _flash_and_rerun(
                         "success",
                         f"Base normalizada, deduplicada y con banderas de prioridad/cuenta especial ({len(df_norm):,} facturas).",
+                        tab=TAB_LABELS[2],
                     )
         except Exception as e:
             st.error(f"Error durante la carga o normalizacion: {e}")
@@ -423,6 +442,7 @@ with tab_hon:
         st.caption(f"Honorarios cargados actualmente: {len(hon_actual):,} filas normalizadas.")
 
     if honorarios_file is not None:
+        _set_active_tab(TAB_LABELS[3])
         try:
             df_hon_raw = read_any(honorarios_file)
             df_hon_norm = load_honorarios(df_hon_raw)
@@ -492,7 +512,7 @@ with tab_hon:
                         matches = df_hon_enr[match_col].notna().sum()
                         ss["honorarios_summary"] = build_honorarios_summary(df_hon_enr)
                         message = f"Match completado: {matches:,} honorarios con datos bancarios de {len(df_hon_enr):,} filas."
-                        _flash_and_rerun("success", message)
+                        _flash_and_rerun("success", message, tab=TAB_LABELS[3])
                     else:
                         st.warning("Match ejecutado pero no se detectaron columnas nuevas desde la maestra. Verifica la llave centro_costo_costeo / codigo_contable.")
             except Exception as e:
