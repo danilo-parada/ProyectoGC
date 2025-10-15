@@ -1047,7 +1047,7 @@ st.subheader("5) Presupuesto del Día (Selección Automática)")
 base_keep = [
     "Nivel","prov_prioritario","cuenta_especial","fac_numero","cmp_nombre","prr_razon_social",
     "fac_fecha_factura","fecha_venc_30","dias_a_vencer","importe_regla",
-    "cuenta_corriente","banco"
+    "cuenta_corriente","banco","ap"
 ]
 
 
@@ -1058,7 +1058,7 @@ def _prep_show(d: pd.DataFrame) -> pd.DataFrame:
         "fac_numero":"N° Factura","cmp_nombre":"Sede","prr_razon_social":"Proveedor",
         "fac_fecha_factura":"Fecha Factura","fecha_venc_30":"Fecha Venc.",
         "dias_a_vencer":"Días a Vencer","importe_regla":"Monto",
-        "cuenta_corriente":"Cuenta Corriente","banco":"Banco"
+        "cuenta_corriente":"Cuenta Corriente","banco":"Banco","ap":"AP"
     })
     for col in ("Fecha Factura", "Fecha Venc."):
         if col in show:
@@ -1081,7 +1081,7 @@ def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
         "fac_numero":"N° Factura","cmp_nombre":"Sede","prr_razon_social":"Proveedor",
         "fac_fecha_factura":"Fecha Factura","fecha_venc_30":"Fecha Venc.",
         "dias_a_vencer":"Días a Vencer","importe_regla":"Monto",
-        "cuenta_corriente":"Cuenta Corriente","banco":"Banco"
+        "cuenta_corriente":"Cuenta Corriente","banco":"Banco","ap":"AP"
     })
     if "Proveedor Prioritario" in out:
         out["Proveedor Prioritario"] = out["Proveedor Prioritario"].map({True:"Sí", False:"No"})
