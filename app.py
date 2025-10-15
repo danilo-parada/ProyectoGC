@@ -67,6 +67,78 @@ def _count_rows(obj) -> int:
     return 0
 
 
+def _render_preview_table(
+    df: Optional[pd.DataFrame],
+    *,
+    max_rows: int = 100,
+    visible_rows: int = 12,
+) -> None:
+    """Renderiza un fragmento de ``df`` con estilo profesional."""
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        st.info("No hay datos para mostrar en esta vista previa.")
+        return
+
+    preview = sanitize_df(df.head(max_rows))
+    table_styles = [
+        {
+            "selector": "table",
+            "props": [
+                ("border-collapse", "separate"),
+                ("border-spacing", "0"),
+            ],
+        },
+        {
+            "selector": "thead",
+            "props": [
+                ("background", "linear-gradient(90deg, #1f3c88 0%, #2d77ff 100%)"),
+                ("color", "#ffffff"),
+            ],
+        },
+        {
+            "selector": "thead th",
+            "props": [
+                ("padding", "16px 20px"),
+                ("font-size", "0.95rem"),
+                ("font-weight", "600"),
+                ("border-bottom", "1px solid rgba(255, 255, 255, 0.3)"),
+                ("letter-spacing", "0.01em"),
+            ],
+        },
+        {
+            "selector": "tbody td",
+            "props": [
+                ("padding", "12px 20px"),
+                ("border-bottom", "1px solid #e3e9ff"),
+                ("font-size", "0.94rem"),
+                ("color", "#1b1f3b"),
+            ],
+        },
+        {
+            "selector": "tbody tr:nth-child(even)",
+            "props": [("background-color", "#f6f8ff")],
+        },
+        {
+            "selector": "tbody tr:hover",
+            "props": [
+                ("background-color", "#ecf2ff"),
+                ("transition", "background-color 0.2s ease"),
+            ],
+        },
+    ]
+
+    styler = (
+        preview.style.format(na_rep="—")
+        .set_table_styles(table_styles, overwrite=False)
+        .set_properties(**{"text-align": "left"})
+    )
+
+    if len(df) > max_rows:
+        st.caption(f"Mostrando {max_rows:,} de {len(df):,} filas totales.")
+
+    style_table(styler, visible_rows=visible_rows)
+
+
 def _card_html(
     title: str,
     rows: int,
@@ -310,9 +382,8 @@ with tab_cta:
     if isinstance(ss.get("df_ctaes_raw"), pd.DataFrame):
         df_cta_preview = ss["df_ctaes_raw"]
         cta_preview_open = not df_cta_preview.empty
-    with st.expander("Vista previa maestra (200 filas)", expanded=cta_preview_open):
-        if isinstance(ss.get("df_ctaes_raw"), pd.DataFrame):
-            style_table(sanitize_df(ss["df_ctaes_raw"].head(200)))
+    with st.expander("Vista previa maestra (100 filas)", expanded=cta_preview_open):
+        _render_preview_table(ss.get("df_ctaes_raw"))
 
 with tab_prov:
     st.markdown("#### 2. Proveedores prioritarios (opcional)")
@@ -345,9 +416,8 @@ with tab_prov:
     if isinstance(ss.get("df_prio_raw"), pd.DataFrame):
         df_prio_preview = ss["df_prio_raw"]
         prio_preview_open = not df_prio_preview.empty
-    with st.expander("Vista previa proveedores prioritarios", expanded=prio_preview_open):
-        if isinstance(ss.get("df_prio_raw"), pd.DataFrame):
-            style_table(sanitize_df(ss["df_prio_raw"].head(200)))
+    with st.expander("Vista previa proveedores (100 filas)", expanded=prio_preview_open):
+        _render_preview_table(ss.get("df_prio_raw"))
 
 with tab_fact:
     st.markdown("#### 3. Facturas")
@@ -410,17 +480,15 @@ with tab_fact:
     df_fact_raw = ss.get("df_raw")
     if isinstance(df_fact_raw, pd.DataFrame):
         raw_preview_open = not df_fact_raw.empty
-    with st.expander("Facturas cargadas (vista previa 200 filas)", expanded=raw_preview_open):
-        if isinstance(df_fact_raw, pd.DataFrame):
-            style_table(sanitize_df(df_fact_raw.head(200)))
+    with st.expander("Facturas cargadas (vista previa 100 filas)", expanded=raw_preview_open):
+        _render_preview_table(df_fact_raw)
 
     fact_preview_open = False
     if isinstance(ss.get("df"), pd.DataFrame):
         df_fact_preview = ss["df"]
         fact_preview_open = not df_fact_preview.empty
-    with st.expander("Base normalizada (vista previa 200 filas)", expanded=fact_preview_open):
-        if isinstance(ss.get("df"), pd.DataFrame):
-            style_table(sanitize_df(ss["df"].head(200)))
+    with st.expander("Base normalizada (vista previa 100 filas)", expanded=fact_preview_open):
+        _render_preview_table(ss.get("df"))
 
 with tab_hon:
     st.markdown("#### 4. Honorarios (opcional)")
@@ -529,10 +597,8 @@ with tab_hon:
     df_hon_norm = ss.get("honorarios")
     if isinstance(df_hon_norm, pd.DataFrame):
         hon_preview_open = not df_hon_norm.empty
-    with st.expander("Honorarios normalizados (vista previa)", expanded=hon_preview_open):
-        df_hon_norm = ss.get("honorarios")
-        if isinstance(df_hon_norm, pd.DataFrame) and not df_hon_norm.empty:
-            style_table(sanitize_df(df_hon_norm.head(200)))
+    with st.expander("Honorarios normalizados (vista previa 100 filas)", expanded=hon_preview_open):
+        _render_preview_table(ss.get("honorarios"))
 
 safe_markdown('<div class="app-separator"></div>')
 
