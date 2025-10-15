@@ -498,6 +498,7 @@ with tab_fact:
     with st.expander("Facturas cargadas (vista previa 100 filas)", expanded=raw_preview_open):
         _render_preview_table(
             df_fact_raw,
+            drop_columns=["ap"],
             integerize=True,
         )
 
@@ -508,6 +509,7 @@ with tab_fact:
     with st.expander("Base normalizada (vista previa 100 filas)", expanded=fact_preview_open):
         _render_preview_table(
             ss.get("df"),
+            drop_columns=["ap"],
             integerize=True,
         )
 
