@@ -572,6 +572,15 @@ def normalize_types(df: pd.DataFrame)->pd.DataFrame:
               "fac_correlativo","pdp_ano_pptario","prr_rut_real","dias_corridos"]:
         if c in df.columns: df[c]=pd.to_numeric(df[c], errors="coerce")
 
+    if "ap" in df.columns:
+        ap_numeric = pd.to_numeric(df["ap"], errors="coerce")
+        if ap_numeric.dropna().empty:
+            df["ap"] = ap_numeric.astype("Int64")
+        elif (ap_numeric.dropna() % 1).abs().lt(1e-9).all():
+            df["ap"] = ap_numeric.round().astype("Int64")
+        else:
+            df["ap"] = ap_numeric
+
     # Claves normalizadas
     if "codigo_proveedor" in df.columns:
         df["key_proveedor"] = _norm_key_series(df["codigo_proveedor"])
