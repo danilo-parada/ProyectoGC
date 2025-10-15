@@ -387,6 +387,14 @@ with tab_fact:
         except Exception as e:
             st.error(f"Error durante la carga o normalizacion: {e}")
 
+    raw_preview_open = False
+    df_fact_raw = ss.get("df_raw")
+    if isinstance(df_fact_raw, pd.DataFrame):
+        raw_preview_open = not df_fact_raw.empty
+    with st.expander("Facturas cargadas (vista previa 200 filas)", expanded=raw_preview_open):
+        if isinstance(df_fact_raw, pd.DataFrame):
+            style_table(sanitize_df(df_fact_raw.head(200)))
+
     fact_preview_open = False
     if isinstance(ss.get("df"), pd.DataFrame):
         df_fact_preview = ss["df"]
