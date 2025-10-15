@@ -72,6 +72,8 @@ def _render_preview_table(
     *,
     max_rows: int = 100,
     visible_rows: int = 12,
+    drop_columns: Optional[List[str]] = None,
+    integerize: bool = False,
 ) -> None:
     """Renderiza un fragmento de ``df`` con estilo profesional."""
 
@@ -79,7 +81,20 @@ def _render_preview_table(
         st.info("No hay datos para mostrar en esta vista previa.")
         return
 
-    preview = sanitize_df(df.head(max_rows))
+    preview = sanitize_df(df.head(max_rows).copy())
+
+    if drop_columns:
+        to_drop = [col for col in drop_columns if col in preview.columns]
+        if to_drop:
+            preview = preview.drop(columns=to_drop)
+
+    if integerize:
+        numeric_cols = preview.select_dtypes(include=["number"]).columns
+        for col in numeric_cols:
+            series = pd.to_numeric(preview[col], errors="coerce")
+            non_na = series.dropna()
+            if not non_na.empty and (non_na % 1).abs().lt(1e-9).all():
+                preview[col] = series.round().astype("Int64")
     table_styles = [
         {
             "selector": "table",
@@ -481,14 +496,22 @@ with tab_fact:
     if isinstance(df_fact_raw, pd.DataFrame):
         raw_preview_open = not df_fact_raw.empty
     with st.expander("Facturas cargadas (vista previa 100 filas)", expanded=raw_preview_open):
-        _render_preview_table(df_fact_raw)
+        _render_preview_table(
+            df_fact_raw,
+            drop_columns=["ap"],
+            integerize=True,
+        )
 
     fact_preview_open = False
     if isinstance(ss.get("df"), pd.DataFrame):
         df_fact_preview = ss["df"]
         fact_preview_open = not df_fact_preview.empty
     with st.expander("Base normalizada (vista previa 100 filas)", expanded=fact_preview_open):
-        _render_preview_table(ss.get("df"))
+        _render_preview_table(
+            ss.get("df"),
+            drop_columns=["ap"],
+            integerize=True,
+        )
 
 with tab_hon:
     st.markdown("#### 4. Honorarios (opcional)")
