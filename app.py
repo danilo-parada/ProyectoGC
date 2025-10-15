@@ -754,6 +754,206 @@ with tab_hon:
         </div>
         """,
     )
+    safe_markdown(
+        """
+        <style>
+        .cm-coachmark { position: relative; z-index: 5; }
+        .cm-modal-toggle { position: absolute; opacity: 0; pointer-events: none; }
+        .cm-fab {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.9rem 1.4rem;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #1f3c88, #2d77ff);
+            color: #ffffff;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            box-shadow: 0 14px 32px rgba(13, 34, 79, 0.35);
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            border: none;
+            font-family: inherit;
+            text-decoration: none;
+        }
+        .cm-fab:hover { transform: translateY(-1px); box-shadow: 0 18px 42px rgba(13, 34, 79, 0.45); }
+        .cm-fab:focus-visible {
+            outline: 3px solid rgba(255, 255, 255, 0.75);
+            outline-offset: 3px;
+        }
+        .cm-fab__icon {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+        .cm-fab__label { font-size: 0.95rem; white-space: nowrap; }
+        .cm-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(12, 19, 38, 0.55);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+            z-index: 998;
+        }
+        .cm-modal {
+            position: fixed;
+            inset: 50% auto auto 50%;
+            transform: translate(-50%, calc(-50% + 32px));
+            width: min(520px, calc(100% - 32px));
+            max-height: calc(100vh - 64px);
+            overflow-y: auto;
+            background: var(--cm-surface, #ffffff);
+            color: inherit;
+            border-radius: 18px;
+            padding: 1.8rem 1.6rem 1.6rem;
+            box-shadow: 0 28px 60px rgba(9, 18, 40, 0.35);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s ease;
+            z-index: 999;
+            font-family: inherit;
+        }
+        .cm-modal__header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .cm-modal__title {
+            margin: 0;
+            font-size: 1.3rem;
+            line-height: 1.35;
+        }
+        .cm-close {
+            cursor: pointer;
+            border-radius: 999px;
+            border: 1px solid rgba(31, 60, 136, 0.25);
+            padding: 0.35rem 0.9rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            background: rgba(31, 60, 136, 0.08);
+            color: inherit;
+            transition: background 0.2s ease;
+        }
+        .cm-close:hover { background: rgba(31, 60, 136, 0.12); }
+        .cm-section { margin-bottom: 1.2rem; }
+        .cm-section h3 {
+            margin: 0 0 0.5rem;
+            font-size: 0.95rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: rgba(31, 60, 136, 0.85);
+        }
+        .cm-summary {
+            margin: 0;
+            font-size: 0.98rem;
+            line-height: 1.55;
+        }
+        .cm-steps {
+            margin: 0.5rem 0 0;
+            padding-left: 1.1rem;
+            display: grid;
+            gap: 0.55rem;
+            font-size: 0.97rem;
+            line-height: 1.5;
+        }
+        .cm-step-final {
+            border: 1px dashed rgba(45, 119, 255, 0.7);
+            border-radius: 12px;
+            padding: 0.75rem 0.9rem;
+            background: rgba(45, 119, 255, 0.1);
+            position: relative;
+            list-style-position: inside;
+        }
+        .cm-step-badge {
+            position: absolute;
+            top: -0.8rem;
+            right: 0.75rem;
+            background: #2d77ff;
+            color: #ffffff;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+        .cm-route {
+            display: block;
+            margin: 0;
+            padding: 0.8rem 1rem;
+            border-radius: 12px;
+            background: rgba(31, 60, 136, 0.08);
+            border: 1px solid rgba(31, 60, 136, 0.2);
+            font-size: 0.92rem;
+            line-height: 1.45;
+        }
+        .cm-note {
+            margin: 0;
+            font-size: 0.88rem;
+            color: rgba(31, 60, 136, 0.9);
+        }
+        .cm-modal-toggle:checked ~ .cm-backdrop {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .cm-modal-toggle:checked ~ .cm-modal {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translate(-50%, -50%);
+        }
+        @media (max-width: 600px) {
+            .cm-fab { bottom: 1rem; right: 1rem; padding: 0.8rem 1.15rem; }
+            .cm-fab__label { font-size: 0.9rem; }
+            .cm-modal { width: calc(100% - 24px); padding: 1.5rem 1.2rem; }
+            .cm-modal__title { font-size: 1.15rem; }
+        }
+        </style>
+        <div class="cm-coachmark">
+            <input type="checkbox" id="cm-honorarios-toggle" class="cm-modal-toggle">
+            <label for="cm-honorarios-toggle" class="cm-fab">
+                <span class="cm-fab__icon">?</span>
+                <span class="cm-fab__label">¿Dónde descargo?</span>
+            </label>
+            <label for="cm-honorarios-toggle" class="cm-backdrop"></label>
+            <div class="cm-modal" role="dialog" aria-labelledby="cm-honorarios-title">
+                <div class="cm-modal__header">
+                    <h2 class="cm-modal__title" id="cm-honorarios-title">Ruta para consultar y descargar información de Honorarios</h2>
+                    <label for="cm-honorarios-toggle" class="cm-close">Cerrar</label>
+                </div>
+                <div class="cm-section">
+                    <h3>Resumen</h3>
+                    <p class="cm-summary">Para consultar y descargar datos de honorarios, sigue esta ruta en el sistema de Contabilidad.</p>
+                </div>
+                <div class="cm-section">
+                    <h3>Pasos</h3>
+                    <ol class="cm-steps">
+                        <li>Abre Contabilidad.</li>
+                        <li>En la barra superior, entra a Honorarios.</li>
+                        <li>Selecciona Convenio Honorarios.</li>
+                        <li>Elige Consultas Honorarios.</li>
+                        <li class="cm-step-final">Haz clic en Cuotas Honorarios (aquí realizas la consulta y descarga).<span class="cm-step-badge">⬅ Aquí descargas</span></li>
+                    </ol>
+                </div>
+                <div class="cm-section">
+                    <h3>Árbol</h3>
+                    <p class="cm-route">Contabilidad ▸ Honorarios ▸ Convenio Honorarios ▸ Consultas Honorarios ▸ Cuotas Honorarios</p>
+                </div>
+                <p class="cm-note">Tip: esta es la ruta estándar para consultar cuotas y descargar la información de honorarios.</p>
+            </div>
+        </div>
+        """
+    )
     honorarios_file = st.file_uploader(
         "Sube archivo de honorarios (xlsx/csv)",
         type=["xlsx", "xls", "csv"],
