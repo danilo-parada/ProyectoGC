@@ -513,6 +513,236 @@ with tab_fact:
             integerize=True,
         )
 
+    st.markdown(
+        """
+        <style>
+        .cm-coachmark { position: relative; }
+        .cm-coachmark .cm-toggle { position: absolute; opacity: 0; pointer-events: none; }
+        .cm-coachmark .cm-fab {
+            position: fixed;
+            right: 1.5rem;
+            bottom: 1.5rem;
+            background: linear-gradient(135deg, #1f3c88, #2d77ff);
+            color: #ffffff;
+            border-radius: 999px;
+            padding: 0.9rem 1.6rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            box-shadow: 0 12px 24px rgba(31, 60, 136, 0.25);
+            cursor: pointer;
+            z-index: 1000;
+            border: none;
+        }
+        .cm-coachmark .cm-fab:hover { box-shadow: 0 16px 28px rgba(31, 60, 136, 0.35); }
+        .cm-coachmark .cm-fab:focus-visible {
+            outline: 3px solid rgba(45, 119, 255, 0.6);
+            outline-offset: 4px;
+        }
+        .cm-coachmark .cm-fab__icon {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.15rem;
+            font-weight: 700;
+        }
+        .cm-coachmark .cm-fab__label { font-size: 0.95rem; }
+        .cm-coachmark .cm-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 16, 28, 0.55);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+            z-index: 999;
+        }
+        .cm-coachmark .cm-modal {
+            position: fixed;
+            inset: 50% auto auto 50%;
+            transform: translate(-50%, calc(-50% + 30px));
+            background: var(--background-color, #ffffff);
+            color: inherit;
+            width: min(520px, calc(100% - 32px));
+            border-radius: 16px;
+            box-shadow: 0 28px 60px rgba(12, 19, 38, 0.3);
+            padding: 1.8rem 1.6rem 1.6rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s ease;
+            z-index: 1001;
+        }
+        .cm-coachmark .cm-modal__header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .cm-coachmark .cm-modal__title {
+            font-size: 1.3rem;
+            margin: 0;
+        }
+        .cm-coachmark .cm-close {
+            cursor: pointer;
+            border: 1px solid rgba(47, 72, 133, 0.2);
+            border-radius: 999px;
+            padding: 0.35rem 0.9rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            background: transparent;
+            color: inherit;
+        }
+        .cm-coachmark .cm-close:hover {
+            background: rgba(47, 72, 133, 0.08);
+        }
+        .cm-coachmark .cm-section { margin-bottom: 1.2rem; }
+        .cm-coachmark .cm-section h3 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .cm-coachmark .cm-summary {
+            margin: 0;
+            font-size: 0.98rem;
+            line-height: 1.5;
+        }
+        .cm-coachmark .cm-steps {
+            margin: 0;
+            padding-left: 1.1rem;
+        }
+        .cm-coachmark .cm-steps li {
+            margin-bottom: 0.55rem;
+            line-height: 1.45;
+        }
+        .cm-coachmark .cm-step-final {
+            border: 1px dashed rgba(45, 119, 255, 0.6);
+            border-radius: 12px;
+            padding: 0.75rem 0.85rem;
+            background: rgba(45, 119, 255, 0.08);
+            position: relative;
+            list-style-position: inside;
+        }
+        .cm-coachmark .cm-step-badge {
+            position: absolute;
+            top: -0.85rem;
+            right: 0.75rem;
+            background: #2d77ff;
+            color: #ffffff;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+        }
+        .cm-coachmark .cm-route {
+            margin: 0;
+            padding: 0.8rem;
+            border-radius: 12px;
+            background: rgba(47, 72, 133, 0.08);
+            font-size: 0.92rem;
+            line-height: 1.4;
+        }
+        .cm-coachmark .cm-note {
+            margin: 0;
+            font-size: 0.88rem;
+            color: rgba(12, 19, 38, 0.78);
+        }
+        .cm-coachmark .cm-toggle:checked ~ .cm-backdrop {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .cm-coachmark .cm-toggle:checked ~ .cm-modal {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translate(-50%, -50%);
+        }
+        @media (max-width: 600px) {
+            .cm-coachmark .cm-fab {
+                right: 1rem;
+                bottom: 1rem;
+                padding: 0.75rem 1.2rem;
+                font-size: 0.9rem;
+            }
+            .cm-coachmark .cm-modal {
+                width: min(420px, calc(100% - 24px));
+                padding: 1.5rem 1.2rem 1.2rem;
+            }
+            .cm-coachmark .cm-fab__icon { width: 1.75rem; height: 1.75rem; }
+        }
+        @media (prefers-color-scheme: dark) {
+            .cm-coachmark .cm-fab {
+                background: linear-gradient(135deg, #5a7aff, #91b4ff);
+                box-shadow: 0 12px 24px rgba(145, 180, 255, 0.35);
+            }
+            .cm-coachmark .cm-fab:hover {
+                box-shadow: 0 16px 30px rgba(145, 180, 255, 0.45);
+            }
+            .cm-coachmark .cm-modal {
+                background: #0e1629;
+                color: #e4ecff;
+            }
+            .cm-coachmark .cm-close {
+                border-color: rgba(145, 180, 255, 0.4);
+                color: #e4ecff;
+            }
+            .cm-coachmark .cm-step-final {
+                background: rgba(145, 180, 255, 0.15);
+                border-color: rgba(145, 180, 255, 0.75);
+            }
+            .cm-coachmark .cm-route {
+                background: rgba(145, 180, 255, 0.12);
+            }
+            .cm-coachmark .cm-note { color: rgba(228, 236, 255, 0.76); }
+        }
+        </style>
+        <div class="cm-coachmark">
+            <input type="checkbox" id="cm-toggle" class="cm-toggle" />
+            <label for="cm-toggle" class="cm-fab" role="button" aria-haspopup="dialog" aria-controls="cm-modal">
+                <span class="cm-fab__icon">?</span>
+                <span class="cm-fab__label">¿Dónde descargo?</span>
+            </label>
+            <label for="cm-toggle" class="cm-backdrop" aria-hidden="true"></label>
+            <div class="cm-modal" id="cm-modal" role="dialog" aria-modal="true" aria-labelledby="cm-modal-title">
+                <div class="cm-modal__header">
+                    <h2 class="cm-modal__title" id="cm-modal-title">Guía de descarga</h2>
+                    <label for="cm-toggle" class="cm-close" role="button">Cerrar</label>
+                </div>
+                <div class="cm-modal__body">
+                    <div class="cm-section">
+                        <h3>Resumen</h3>
+                        <p class="cm-summary">Para descargar información de facturación, sigue esta ruta en el sistema de Contabilidad.</p>
+                    </div>
+                    <div class="cm-section">
+                        <h3>Pasos</h3>
+                        <ol class="cm-steps">
+                            <li>Abre Contabilidad.</li>
+                            <li>En la barra superior, entra a Proveedores.</li>
+                            <li>Selecciona Facturación Proveedores.</li>
+                            <li>Elige Consultas Facturación Proveedor.</li>
+                            <li>Dentro de Proveedores, entra en Facturas Proveedores.</li>
+                            <li>Ingresa a Módulo Facturación Proveedores.</li>
+                            <li class="cm-step-final">Haz clic en Consulta General Facturación (aquí realizas la consulta y descarga).<span class="cm-step-badge">Aquí descargas</span></li>
+                        </ol>
+                    </div>
+                    <div class="cm-section">
+                        <h3>Árbol</h3>
+                        <p class="cm-route">Contabilidad ▸ Proveedores ▸ Facturación Proveedores ▸ Consultas Facturación Proveedor ▸ Proveedores ▸ Facturas Proveedores ▸ Módulo Facturación Proveedores ▸ Consulta General Facturación</p>
+                    </div>
+                    <p class="cm-note">Tip: guarda esta ruta. Es el ingreso estándar para consultar y descargar facturación de proveedores.</p>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 with tab_hon:
     st.markdown("#### 4. Honorarios (opcional)")
     safe_markdown(
