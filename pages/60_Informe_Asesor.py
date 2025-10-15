@@ -1070,6 +1070,9 @@ def _prep_show(d: pd.DataFrame) -> pd.DataFrame:
         show["Cuenta Especial"] = show["Cuenta Especial"].map({True:"Sí", False:"No"})
     if "Monto" in show:
         show["Monto"] = pd.to_numeric(show["Monto"], errors="coerce").fillna(0).map(money)
+    if "AP" in show:
+        ap_numeric = pd.to_numeric(show["AP"], errors="coerce")
+        show["AP"] = ap_numeric.apply(lambda x: "" if pd.isna(x) else f"{int(x)}")
     return show
 
 
@@ -1089,6 +1092,12 @@ def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
         out["Cuenta Especial"] = out["Cuenta Especial"].map({True:"Sí", False:"No"})
     if "Monto" in out:
         out["Monto"] = pd.to_numeric(out["Monto"], errors="coerce").fillna(0.0)
+    if "AP" in out:
+        ap_numeric = pd.to_numeric(out["AP"], errors="coerce")
+        out["AP"] = pd.array(
+            [pd.NA if pd.isna(val) else int(val) for val in ap_numeric],
+            dtype="Int64",
+        )
     return out
 
 
