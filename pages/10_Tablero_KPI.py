@@ -35,8 +35,7 @@ def _build_header_subtitle(df: Optional[pd.DataFrame]) -> str:
     if df is None:
         return (
             base
-            + " - Datos cargados sin rango de fechas de factura disponible; la Fecha de "
-            "Factura se muestra en formato dd-mm-yyyy."
+            + " - Datos cargados sin rango de fechas de factura disponible"
         )
 
     fac_dates = pd.to_datetime(
@@ -47,8 +46,7 @@ def _build_header_subtitle(df: Optional[pd.DataFrame]) -> str:
     if fac_dates.empty:
         return (
             base
-            + " - Datos cargados sin rango de fechas de factura disponible; la Fecha de "
-            "Factura se muestra en formato dd-mm-yyyy."
+            + " - Datos cargados sin rango de fechas de factura disponible"
         )
 
     fac_start = fac_dates.min().strftime("%d-%m-%Y")
@@ -59,7 +57,7 @@ def _build_header_subtitle(df: Optional[pd.DataFrame]) -> str:
         + fac_start
         + ") hasta la Fecha Fin Factura ("
         + fac_end
-        + "); la Fecha de Factura se muestra en formato dd-mm-yyyy."
+        + ")"
     )
 
 def _metric_card(
