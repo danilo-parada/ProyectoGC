@@ -73,7 +73,7 @@ def _auto_col_widths_compact(columns: List[str], available_width: float) -> List
             weights[col] = 3.2
         elif c in ("sede", "cuenta corriente", "banco"):
             weights[col] = 1.7
-        elif c in ("n° factura", "dias v", "días v", "pp", "ce"):
+        elif c in ("n° factura", "dias v", "días v", "pp", "ce", "ap"):
             weights[col] = 0.9
         elif "monto" in c:
             weights[col] = 1.4
@@ -144,7 +144,7 @@ def _safe_numeric_series(d: pd.DataFrame, col: str, default: float = 0.0) -> pd.
 
 # ===================== Compact schema =====================
 _COMPACT_ORDER = [
-    "Nivel", "PP", "CE", "N° Factura", "Sede", "Proveedor",
+    "Nivel", "PP", "CE", "AP", "N° Factura", "Sede", "Proveedor",
     "Fecha Venc.", "Días V", "Monto", "Cuenta Corriente", "Banco"
 ]
 
@@ -209,6 +209,10 @@ def _to_compact_schema(df: pd.DataFrame) -> pd.DataFrame:
         d["Cuenta Corriente"] = d["cuenta_corriente"]
     if "Banco" not in d.columns and "banco" in d.columns:
         d["Banco"] = d["banco"]
+
+    # AP
+    if "AP" not in d.columns and "ap" in d.columns:
+        d["AP"] = d["ap"]
 
     # Selección y orden final
     keep = [c for c in _COMPACT_ORDER if c in d.columns]
@@ -381,7 +385,7 @@ def generate_pdf_report(
         if isinstance(pagos_criticos_df, pd.DataFrame) and not pagos_criticos_df.empty:
             story.append(Paragraph("<b>Pagos Críticos</b>", styles["body_left"]))
             df_c = _to_compact_schema(pagos_criticos_df)
-            df_c = _limit_columns(df_c, 11)
+            df_c = _limit_columns(df_c, 12)
 
             for chunk in _chunk_rows(df_c, 40):
                 tbl_c = _table_compact(
@@ -397,7 +401,7 @@ def generate_pdf_report(
             if presupuesto_monto is not None:
                 story.append(Paragraph(f"Presupuesto: <b>{money(presupuesto_monto)}</b>", styles["body_left"]))
             df_sel = _to_compact_schema(seleccion_hoy_df)
-            df_sel = _limit_columns(df_sel, 11)
+            df_sel = _limit_columns(df_sel, 12)
 
             for chunk in _chunk_rows(df_sel, 40):
                 tbl_sel = _table_compact(
