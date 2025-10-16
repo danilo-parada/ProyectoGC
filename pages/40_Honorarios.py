@@ -613,19 +613,24 @@ def _ensure_importe_deuda_hon(dfin: pd.DataFrame) -> pd.DataFrame:
     d = dfin.copy()
     if "importe_deuda" in d.columns:
         d["importe_deuda"] = pd.to_numeric(d["importe_deuda"], errors="coerce").fillna(0.0)
-        return d
+    else:
+        monto_cuota = pd.to_numeric(d.get("monto_cuota"), errors="coerce")
+        base = monto_cuota
+        if base is None or base.dropna().empty:
+            base = pd.to_numeric(d.get("dcu_monto"), errors="coerce")
+        if base is None or base.dropna().empty:
+            base = pd.to_numeric(d.get("monto_autorizado"), errors="coerce")
+        fallback = pd.to_numeric(d.get("fac_monto_total"), errors="coerce")
+        if base is None:
+            base = fallback
+        if fallback is not None and base is not None:
+            base = base.fillna(fallback)
+        d["importe_deuda"] = base.fillna(0.0) if base is not None else 0.0
 
-    base = pd.to_numeric(d.get("dcu_monto"), errors="coerce")
-    if base is None or base.dropna().empty:
-        base = pd.to_numeric(d.get("monto_cuota"), errors="coerce")
-    if base is None or base.dropna().empty:
-        base = pd.to_numeric(d.get("monto_autorizado"), errors="coerce")
-    fallback = pd.to_numeric(d.get("fac_monto_total"), errors="coerce")
-    if base is None:
-        base = fallback
-    if fallback is not None:
-        base = base.fillna(fallback)
-    d["importe_deuda"] = base.fillna(0.0) if base is not None else 0.0
+    if "monto_cuota" in d.columns:
+        d["monto_cuota"] = pd.to_numeric(d["monto_cuota"], errors="coerce").fillna(0.0)
+    else:
+        d["monto_cuota"] = d["importe_deuda"].copy()
     return d
 
 
@@ -892,22 +897,20 @@ def _apply_horizon_filter(dfin: pd.DataFrame, horizonte: float) -> pd.DataFrame:
 
 
 BASE_KEEP_COLS = [
-    "Nivel",
-    "prov_prioritario",
-    "cuenta_especial",
-    "fac_numero",
-    "cmp_nombre",
-    "prr_razon_social",
+    "rut",
+    "cnv_fecha_inicio",
+    "cnv_fecha_termino",
+    "dcu_correlativo",
+    "cnv_cuotas",
     "fecha_emision",
     "fecha_cuota",
-    "fecha_venc_30",
-    "dias_a_vencer",
-    "importe_deuda",
-    "cuenta_corriente",
-    "banco",
-    "ap",
-    "numero_documento",
-    "nombre_profesional",
+    "codigo_estado_cuota",
+    "estado_cuota",
+    "codigo_centro",
+    "monto_cuota",
+    "cuenta_especial",
+    "cta_bnc_especial",
+    "fecha_ce",
 ]
 
 
@@ -915,34 +918,42 @@ def _prep_show(d: pd.DataFrame) -> pd.DataFrame:
     keep = [c for c in BASE_KEEP_COLS if c in d.columns]
     show = d[keep].rename(
         columns={
-            "prov_prioritario": "Proveedor Prioritario",
-            "cuenta_especial": "Cuenta Especial",
-            "fac_numero": "N° Factura",
-            "cmp_nombre": "Sede",
-            "prr_razon_social": "Proveedor",
+            "rut": "RUT",
+            "cnv_fecha_inicio": "Inicio Convenio",
+            "cnv_fecha_termino": "Término Convenio",
+            "dcu_correlativo": "Correlativo",
+            "cnv_cuotas": "N° Cuotas",
             "fecha_emision": "Fecha Emisión",
             "fecha_cuota": "Fecha Cuota",
-            "fecha_venc_30": "Fecha Venc.",
-            "dias_a_vencer": "Días a Vencer",
-            "importe_deuda": "Monto",
-            "cuenta_corriente": "Cuenta Corriente",
-            "numero_documento": "Documento",
-            "nombre_profesional": "Profesional",
+            "codigo_estado_cuota": "Código Estado",
+            "estado_cuota": "Estado Cuota",
+            "codigo_centro": "Código Centro",
+            "monto_cuota": "Monto Cuota",
+            "cuenta_especial": "Cuenta Especial",
+            "cta_bnc_especial": "CTA Banco Especial",
+            "fecha_ce": "Fecha Pago",
         }
     )
 
-    for col in ("Fecha Emisión", "Fecha Cuota", "Fecha Venc."):
+    for col in (
+        "Inicio Convenio",
+        "Término Convenio",
+        "Fecha Emisión",
+        "Fecha Cuota",
+        "Fecha Pago",
+    ):
         if col in show:
             fechas = pd.to_datetime(show[col], errors="coerce")
             show[col] = fechas.dt.strftime("%d-%m-%Y").fillna("s/d")
-    for col in ("Proveedor Prioritario", "Cuenta Especial"):
-        if col in show:
-            show[col] = show[col].map({True: "Sí", False: "No"})
-    if "Monto" in show:
-        show["Monto"] = pd.to_numeric(show["Monto"], errors="coerce").fillna(0).map(money)
-    if "AP" in show:
-        ap_numeric = pd.to_numeric(show["AP"], errors="coerce")
-        show["AP"] = ap_numeric.apply(lambda x: "" if pd.isna(x) else f"{int(x)}")
+    if "Cuenta Especial" in show:
+        show["Cuenta Especial"] = show["Cuenta Especial"].map({True: "Sí", False: "No"}).fillna("No")
+    if "Monto Cuota" in show:
+        show["Monto Cuota"] = (
+            pd.to_numeric(show["Monto Cuota"], errors="coerce").fillna(0).map(money)
+        )
+    if "N° Cuotas" in show:
+        cuotas = pd.to_numeric(show["N° Cuotas"], errors="coerce")
+        show["N° Cuotas"] = cuotas.apply(lambda x: "" if pd.isna(x) else f"{int(x)}")
     return show
 
 
@@ -950,19 +961,20 @@ def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
     keep = [c for c in BASE_KEEP_COLS if c in d.columns]
     out = d[keep].rename(
         columns={
-            "prov_prioritario": "Proveedor Prioritario",
-            "cuenta_especial": "Cuenta Especial",
-            "fac_numero": "N° Factura",
-            "cmp_nombre": "Sede",
-            "prr_razon_social": "Proveedor",
+            "rut": "RUT",
+            "cnv_fecha_inicio": "Inicio Convenio",
+            "cnv_fecha_termino": "Término Convenio",
+            "dcu_correlativo": "Correlativo",
+            "cnv_cuotas": "N° Cuotas",
             "fecha_emision": "Fecha Emisión",
             "fecha_cuota": "Fecha Cuota",
-            "fecha_venc_30": "Fecha Venc.",
-            "dias_a_vencer": "Días a Vencer",
-            "importe_deuda": "Monto",
-            "cuenta_corriente": "Cuenta Corriente",
-            "numero_documento": "Documento",
-            "nombre_profesional": "Profesional",
+            "codigo_estado_cuota": "Código Estado",
+            "estado_cuota": "Estado Cuota",
+            "codigo_centro": "Código Centro",
+            "monto_cuota": "Monto Cuota",
+            "cuenta_especial": "Cuenta Especial",
+            "cta_bnc_especial": "CTA Banco Especial",
+            "fecha_ce": "Fecha Pago",
         }
     )
     if "Proveedor Prioritario" in out:
@@ -1279,6 +1291,28 @@ if not df_nopag_all.empty:
         df_nopag_all["cuenta_especial"] = False
     if "prov_prioritario" in df_nopag_all:
         df_nopag_all["prov_prioritario"] = df_nopag_all["prov_prioritario"].fillna(False).astype(bool)
+
+    if {"fecha_emision_ref", "fecha_cuota_ref"}.issubset(df_nopag_all.columns):
+        fechas_validas = df_nopag_all[["fecha_emision_ref", "fecha_cuota_ref"]].notna().all(axis=1)
+        categoria = np.where(
+            fechas_validas & (df_nopag_all["fecha_emision_ref"] > df_nopag_all["fecha_cuota_ref"]),
+            "Emisión posterior a cuota",
+            "Emisión anterior o igual a cuota",
+        )
+        categoria = np.where(~fechas_validas, "Sin información de fechas", categoria)
+        df_nopag_all["clasificacion_plazo"] = categoria
+        df_nopag_all["dias_sin_pago"] = (
+            TODAY - pd.to_datetime(df_nopag_all.get("fecha_emision_ref"), errors="coerce")
+        ).dt.days
+        df_nopag_all["dias_para_cuota"] = (
+            pd.to_datetime(df_nopag_all.get("fecha_cuota_ref"), errors="coerce") - TODAY
+        ).dt.days
+    else:
+        df_nopag_all["clasificacion_plazo"] = "Sin información de fechas"
+        df_nopag_all["dias_sin_pago"] = np.nan
+        df_nopag_all["dias_para_cuota"] = np.nan
+
+    df_nopag_all["monto_cuota_num"] = pd.to_numeric(df_nopag_all.get("monto_cuota"), errors="coerce").fillna(0.0)
 else:
     df_nopag_all = df_nopag_all.iloc[0:0]
 
@@ -1297,6 +1331,102 @@ else:
     )
     _draw_debt_panel("Contabilizado Pendiente de Pago", contab_df)
     _draw_debt_panel("Pendiente de Contabilización", sincontab_df)
+
+    categorias_visibles = [
+        "Emisión posterior a cuota",
+        "Emisión anterior o igual a cuota",
+    ]
+    cards_categoria: list[str] = []
+    for label in categorias_visibles:
+        subset = df_nopag_all[df_nopag_all["clasificacion_plazo"] == label]
+        if subset.empty:
+            continue
+        total_monto = float(subset["monto_cuota_num"].sum())
+        total_docs = int(len(subset))
+        ce_mask = subset.get("cuenta_especial", pd.Series(False, index=subset.index)).astype(bool)
+        ce_count = int(ce_mask.sum())
+        ce_monto = float(subset.loc[ce_mask, "monto_cuota_num"].sum()) if ce_count else 0.0
+        no_ce_count = total_docs - ce_count
+        no_ce_monto = total_monto - ce_monto
+        dias_prom = _avg_days_from_series(subset.get("dias_sin_pago"))
+
+        stats = [
+            ("Prom. días sin pago", _fmt_days(dias_prom)),
+            ("Cuenta especial", f"{ce_count:,} • {money(ce_monto)}"),
+            ("No cuenta especial", f"{no_ce_count:,} • {money(no_ce_monto)}"),
+        ]
+        cards_categoria.append(
+            _card_html(
+                title=label,
+                value=money(total_monto),
+                subtitle=f"{total_docs:,} honorarios sin pagar",
+                stats=stats,
+                tone="accent" if label == "Emisión posterior a cuota" else "default",
+                compact=False,
+            )
+        )
+    if cards_categoria:
+        safe_markdown(
+            "<div class='app-title-block'><h3 style='color:#000;'>Clasificación por fecha de cuota</h3>"
+            "<p>Desglose basado en la comparación entre emisión y cuota.</p></div>"
+        )
+        _render_cards(cards_categoria, layout="grid-2")
+
+    resumen_tipo = (
+        df_nopag_all.groupby(["clasificacion_plazo", "estado_cuota"], dropna=False)
+        .agg(
+            Monto_Pendiente=("monto_cuota_num", "sum"),
+            Honorarios=("monto_cuota_num", "count"),
+            Prom_Dias_Sin_Pago=("dias_sin_pago", "mean"),
+            Prom_Dias_Hasta_Cuota=("dias_para_cuota", "mean"),
+        )
+        .reset_index()
+    )
+
+    if not resumen_tipo.empty:
+        display_tipo = resumen_tipo.copy()
+        display_tipo["Monto_Pendiente"] = display_tipo["Monto_Pendiente"].map(money)
+        display_tipo["Honorarios"] = display_tipo["Honorarios"].astype(int)
+        display_tipo["Prom_Dias_Sin_Pago"] = display_tipo["Prom_Dias_Sin_Pago"].apply(_fmt_days)
+        display_tipo["Prom_Dias_Hasta_Cuota"] = display_tipo["Prom_Dias_Hasta_Cuota"].apply(_fmt_days)
+        display_tipo = display_tipo.rename(
+            columns={
+                "clasificacion_plazo": "Clasificación",
+                "estado_cuota": "Estado Cuota",
+                "Monto_Pendiente": "Monto Pendiente",
+                "Honorarios": "Cant. Honorarios",
+                "Prom_Dias_Sin_Pago": "Prom. días sin pago",
+                "Prom_Dias_Hasta_Cuota": "Prom. días hasta cuota",
+            }
+        )
+        display_tipo = sanitize_df(display_tipo)
+        safe_markdown("**Resumen por clasificación y estado de cuota**")
+        style_table(_table_style(display_tipo))
+
+    resumen_ce = (
+        df_nopag_all.groupby(["clasificacion_plazo", "cuenta_especial"], dropna=False)
+        .agg(
+            Monto_Pendiente=("monto_cuota_num", "sum"),
+            Honorarios=("monto_cuota_num", "count"),
+        )
+        .reset_index()
+    )
+    if not resumen_ce.empty:
+        display_ce = resumen_ce.copy()
+        display_ce["Monto_Pendiente"] = display_ce["Monto_Pendiente"].map(money)
+        display_ce["Honorarios"] = display_ce["Honorarios"].astype(int)
+        display_ce["cuenta_especial"] = display_ce["cuenta_especial"].map({True: "Sí", False: "No"}).fillna("Sin dato")
+        display_ce = display_ce.rename(
+            columns={
+                "clasificacion_plazo": "Clasificación",
+                "cuenta_especial": "Cuenta especial",
+                "Monto_Pendiente": "Monto Pendiente",
+                "Honorarios": "Cant. Honorarios",
+            }
+        )
+        display_ce = sanitize_df(display_ce)
+        safe_markdown("**Desglose por cuenta especial**")
+        style_table(_table_style(display_ce))
 
 
 # =========================================================
