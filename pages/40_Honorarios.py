@@ -1256,7 +1256,11 @@ else:
 
     categorias_visibles = [
         "Emisión posterior a cuota",
-        "Emisión anterior o igual a cuota",
+        "Emisión y cuota el mismo día",
+        "Emisión anterior a cuota",
+        "Sin fecha de emisión",
+        "Sin fecha de cuota",
+        "Sin fecha de emisión ni cuota",
     ]
     tooltip_plazo = (
         "Días sin pago = hoy - fecha de emisión. "
