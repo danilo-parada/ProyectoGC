@@ -1206,36 +1206,24 @@ if not df_nopag_all.empty:
         df_nopag_all["prov_prioritario"] = df_nopag_all["prov_prioritario"].fillna(False).astype(bool)
 
     if {"fecha_emision_ref", "fecha_cuota_ref"}.issubset(df_nopag_all.columns):
-        fecha_emision = pd.to_datetime(df_nopag_all.get("fecha_emision_ref"), errors="coerce")
-        fecha_cuota = pd.to_datetime(df_nopag_all.get("fecha_cuota_ref"), errors="coerce")
-
-        emision_na = fecha_emision.isna()
-        cuota_na = fecha_cuota.isna()
-        clasificacion = np.full(len(df_nopag_all), "Sin información de fechas", dtype=object)
-
-        ambos_na = emision_na & cuota_na
-        clasificacion[ambos_na] = "Sin fecha de emisión ni cuota"
-
-        solo_emision_na = emision_na & ~cuota_na
-        clasificacion[solo_emision_na] = "Sin fecha de emisión"
-
-        solo_cuota_na = ~emision_na & cuota_na
-        clasificacion[solo_cuota_na] = "Sin fecha de cuota"
-
-        validas = ~emision_na & ~cuota_na
-        posterior = validas & (fecha_emision > fecha_cuota)
-        clasificacion[posterior] = "Emisión posterior a cuota"
-
-        anterior = validas & (fecha_emision < fecha_cuota)
-        clasificacion[anterior] = "Emisión anterior a cuota"
-
-        mismo_dia = validas & (fecha_emision == fecha_cuota)
-        clasificacion[mismo_dia] = "Emisión y cuota el mismo día"
-
-        df_nopag_all["clasificacion_plazo"] = clasificacion
-        df_nopag_all["dias_sin_pago"] = (TODAY - fecha_emision).dt.days
-        df_nopag_all["dias_para_cuota"] = (fecha_cuota - TODAY).dt.days
-        df_nopag_all["margen_emision"] = (fecha_cuota - fecha_emision).dt.days
+        fechas_validas = df_nopag_all[["fecha_emision_ref", "fecha_cuota_ref"]].notna().all(axis=1)
+        categoria = np.where(
+            fechas_validas & (df_nopag_all["fecha_emision_ref"] > df_nopag_all["fecha_cuota_ref"]),
+            "Emisión posterior a cuota",
+            "Emisión anterior o igual a cuota",
+        )
+        categoria = np.where(~fechas_validas, "Sin información de fechas", categoria)
+        df_nopag_all["clasificacion_plazo"] = categoria
+        df_nopag_all["dias_sin_pago"] = (
+            TODAY - pd.to_datetime(df_nopag_all.get("fecha_emision_ref"), errors="coerce")
+        ).dt.days
+        df_nopag_all["dias_para_cuota"] = (
+            pd.to_datetime(df_nopag_all.get("fecha_cuota_ref"), errors="coerce") - TODAY
+        ).dt.days
+        df_nopag_all["margen_emision"] = (
+            pd.to_datetime(df_nopag_all.get("fecha_cuota_ref"), errors="coerce")
+            - pd.to_datetime(df_nopag_all.get("fecha_emision_ref"), errors="coerce")
+        ).dt.days
     else:
         df_nopag_all["clasificacion_plazo"] = "Sin información de fechas"
         df_nopag_all["dias_sin_pago"] = np.nan
@@ -1277,49 +1265,8 @@ else:
     tooltip_plazo = (
         "Días sin pago = hoy - fecha de emisión. "
         "Días hasta cuota = fecha de cuota - hoy (negativo indica atraso). "
-        "Margen al emitir = fecha de cuota - fecha de emisión; si es negativo, la cuota nace con atraso. "
-        "Los casos sin fechas o con emisión el mismo día de la cuota se listan explícitamente."
+        "Margen al emitir = fecha de cuota - fecha de emisión; si es negativo, la cuota nace con atraso."
     )
-
-    def _collect_assumption(label: str, mensaje: str) -> Optional[str]:
-        subset = df_resumen[df_resumen["clasificacion_plazo"] == label]
-        if subset.empty:
-            return None
-        monto = float(
-            pd.to_numeric(subset.get("importe_pendiente"), errors="coerce").fillna(0.0).sum()
-        )
-        cantidad = int(len(subset))
-        return mensaje.format(count=cantidad, amount=money(monto))
-
-    assumption_messages = list(
-        filter(
-            None,
-            [
-                _collect_assumption(
-                    "Sin fecha de emisión", "{count:,} sin fecha de emisión registrada ({amount})."
-                ),
-                _collect_assumption(
-                    "Sin fecha de cuota", "{count:,} sin fecha de cuota registrada ({amount})."
-                ),
-                _collect_assumption(
-                    "Sin fecha de emisión ni cuota",
-                    "{count:,} sin ambas fechas disponibles ({amount}).",
-                ),
-                _collect_assumption(
-                    "Emisión y cuota el mismo día",
-                    "{count:,} con emisión y cuota el mismo día; margen considerado = 0 ({amount}).",
-                ),
-            ],
-        )
-    )
-
-    if assumption_messages:
-        items = "".join(f"<li>{html.escape(msg)}</li>" for msg in assumption_messages)
-        safe_markdown(
-            "<div class='app-info-block'><strong>Suposiciones de fechas</strong><ul>"
-            f"{items}</ul></div>"
-        )
-
     cards_categoria: list[str] = []
     for label in categorias_visibles:
         subset = df_resumen[df_resumen["clasificacion_plazo"] == label]
