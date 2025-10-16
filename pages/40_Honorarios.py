@@ -644,18 +644,23 @@ def _ensure_dias_a_vencer_hon(dfin: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
-def _classify_nivel_hon(estado: str) -> str:
-    estado_norm = (estado or "").upper()
-    if "PAGADA" in estado_norm:
-        return "Pagada"
-    if any(token in estado_norm for token in ("AUTORIZ", "CONTABIL")):
-        return "Contabilizado Pendiente de Pago"
-    return "Pendiente de Contabilización"
+def _resolve_pending_amount(dfin: pd.DataFrame) -> pd.Series:
+    if dfin.empty:
+        return pd.Series(dtype=float)
+
+    amount = pd.Series(np.nan, index=dfin.index, dtype=float)
+    preference = ["monto_autorizado", "monto_cuota", "fac_monto_total", "importe_deuda"]
+    for col in preference:
+        if col in dfin.columns:
+            candidate = pd.to_numeric(dfin[col], errors="coerce")
+            amount = amount.combine_first(candidate)
+    return amount.fillna(0.0)
 
 
 def _agg_block(d: pd.DataFrame, mask: pd.Series) -> Tuple[float, int]:
     sub = d.loc[mask] if isinstance(mask, pd.Series) else d
-    monto = float(pd.to_numeric(sub.get("importe_deuda"), errors="coerce").fillna(0.0).sum())
+    amount_col = "importe_pendiente" if "importe_pendiente" in sub.columns else "importe_deuda"
+    monto = float(pd.to_numeric(sub.get(amount_col), errors="coerce").fillna(0.0).sum())
     cant = int(len(sub))
     return monto, cant
 
@@ -668,91 +673,6 @@ def _kpis_deuda(dfin: pd.DataFrame) -> dict:
     hoy_m, c_h = _agg_block(dfin, dias == 0)
     por_v, c_p = _agg_block(dfin, dias > 0)
     return dict(vencido=vencido, c_venc=c_v, hoy=hoy_m, c_hoy=c_h, por_ven=por_v, c_por=c_p)
-
-
-def _deuda_detalle_metrics(dfin: pd.DataFrame, *, panel: str) -> dict[str, float]:
-    if dfin is None or dfin.empty:
-        return {
-            "total_monto": 0.0,
-            "total_docs": 0,
-            "dias_prom": float("nan"),
-        }
-
-    d = dfin.copy()
-    d["importe_deuda_num"] = pd.to_numeric(d.get("importe_deuda"), errors="coerce").fillna(0.0)
-    total_monto = float(d["importe_deuda_num"].sum())
-    total_docs = int(len(d))
-
-    if panel == "Contabilizado Pendiente de Pago":
-        if "fecha_cuota_ref" in d:
-            dias = (TODAY - d["fecha_cuota_ref"]).dt.days
-        else:
-            dias = pd.Series(dtype=float)
-    else:
-        if "fecha_emision_ref" in d:
-            dias = (TODAY - d["fecha_emision_ref"]).dt.days
-        else:
-            dias = pd.Series(dtype=float)
-
-    dias_prom = _avg_days_from_series(dias)
-    return {"total_monto": total_monto, "total_docs": total_docs, "dias_prom": dias_prom}
-
-
-def _build_panel_stats(panel: str, detalle: dict, kpis: dict) -> List[Tuple[str, str]]:
-    base_stats: List[Tuple[str, str]] = []
-    if panel == "Contabilizado Pendiente de Pago":
-        base_stats.append(
-            (
-                "Monto contabilizado",
-                f"{money(detalle['total_monto'])} • {_fmt_count(detalle['total_docs'])}",
-            )
-        )
-        base_stats.append(("Días prom. sin pagar", _fmt_days(detalle["dias_prom"])))
-    else:
-        base_stats.append(
-            (
-                "Monto pendiente de contabilización",
-                f"{money(detalle['total_monto'])} • {_fmt_count(detalle['total_docs'])}",
-            )
-        )
-        base_stats.append(("Días prom. sin contabilizar", _fmt_days(detalle["dias_prom"])))
-
-    base_stats.extend(
-        [
-            ("Vencida", f"{money(kpis['vencido'])} • {_fmt_count(kpis['c_venc'])}"),
-            ("Hoy", f"{money(kpis['hoy'])} • {_fmt_count(kpis['c_hoy'])}"),
-            ("Por vencer", f"{money(kpis['por_ven'])} • {_fmt_count(kpis['c_por'])}"),
-        ]
-    )
-    return base_stats
-
-
-def _draw_debt_panel(title: str, panel_df: pd.DataFrame):
-    safe_markdown(
-        '<div class="app-title-block"><h3 style="color:#000;">'
-        + html.escape(title)
-        + '</h3><p>Desglose por cuenta especial</p></div>'
-    )
-    if "cuenta_especial" not in panel_df.columns:
-        st.info("Sin campo de Cuenta Especial para desglosar.")
-        return
-
-    cards: list[str] = []
-    for flag in (True, False):
-        sub = panel_df[panel_df["cuenta_especial"] == flag]
-        detalle = _deuda_detalle_metrics(sub, panel=title)
-        kpis = _kpis_deuda(sub)
-        cards.append(
-            _card_html(
-                title=f"CE {'Sí' if flag else 'No'}",
-                value=f"Total pendiente: {money(detalle['total_monto'])}",
-                subtitle=f"Cantidad total pendiente: {detalle['total_docs']:,} doc.",
-                stats=_build_panel_stats(title, detalle, kpis),
-                tone="accent" if flag else "default",
-                compact=False,
-            )
-        )
-    _render_cards(cards, layout="grid-2")
 
 
 _LOCAL_FILTER_STATE_KEY = "hon_presupuesto_filters"
@@ -866,17 +786,14 @@ def _prioritize_documents(dfin: pd.DataFrame, criterio: str) -> pd.DataFrame:
     importe = pd.to_numeric(out.get("importe_deuda"), errors="coerce").fillna(0.0)
     out["importe_regla"] = importe
 
-    if "Nivel" in out:
-        out["_nivel_rank"] = out["Nivel"].map({
-            "Pendiente de Contabilización": 0,
-            "Contabilizado Pendiente de Pago": 1,
-        }).fillna(2)
+    if "margen_emision" in out:
+        out["margen_emision"] = pd.to_numeric(out["margen_emision"], errors="coerce")
     else:
-        out["_nivel_rank"] = 2
+        out["margen_emision"] = np.nan
 
     if criterio == "Riesgo de aprobación":
-        sort_cols = ["_nivel_rank", "vencida_flag", "dias_a_vencer", "importe_regla"]
-        sort_order = [True, False, True, False]
+        sort_cols = ["vencida_flag", "dias_a_vencer", "margen_emision", "importe_regla"]
+        sort_order = [False, True, True, False]
     else:
         sort_cols = ["vencida_flag", "dias_a_vencer", "importe_regla"]
         sort_order = [False, True, False]
@@ -1281,10 +1198,6 @@ df_nopag_all = no_pagadas.copy()
 if not df_nopag_all.empty:
     df_nopag_all = _ensure_importe_deuda_hon(df_nopag_all)
     df_nopag_all = _ensure_dias_a_vencer_hon(df_nopag_all)
-    if "estado_cuota" in df_nopag_all:
-        df_nopag_all["Nivel"] = df_nopag_all["estado_cuota"].astype(str).apply(_classify_nivel_hon)
-    else:
-        df_nopag_all["Nivel"] = "Contabilizado Pendiente de Pago"
     if "cuenta_especial" in df_nopag_all:
         df_nopag_all["cuenta_especial"] = df_nopag_all["cuenta_especial"].fillna(False).astype(bool)
     else:
@@ -1307,64 +1220,88 @@ if not df_nopag_all.empty:
         df_nopag_all["dias_para_cuota"] = (
             pd.to_datetime(df_nopag_all.get("fecha_cuota_ref"), errors="coerce") - TODAY
         ).dt.days
+        df_nopag_all["margen_emision"] = (
+            pd.to_datetime(df_nopag_all.get("fecha_cuota_ref"), errors="coerce")
+            - pd.to_datetime(df_nopag_all.get("fecha_emision_ref"), errors="coerce")
+        ).dt.days
     else:
         df_nopag_all["clasificacion_plazo"] = "Sin información de fechas"
         df_nopag_all["dias_sin_pago"] = np.nan
         df_nopag_all["dias_para_cuota"] = np.nan
+        df_nopag_all["margen_emision"] = np.nan
 
-    df_nopag_all["monto_cuota_num"] = pd.to_numeric(df_nopag_all.get("monto_cuota"), errors="coerce").fillna(0.0)
+    df_nopag_all["importe_pendiente"] = _resolve_pending_amount(df_nopag_all)
+    df_nopag_all["importe_deuda"] = df_nopag_all["importe_pendiente"]
+    df_nopag_all["dias_a_vencer"] = pd.to_numeric(df_nopag_all.get("dias_para_cuota"), errors="coerce")
+    df_nopag_all["monto_cuota_num"] = df_nopag_all["importe_pendiente"]
 else:
     df_nopag_all = df_nopag_all.iloc[0:0]
 
 if df_nopag_all.empty:
     st.info("No hay honorarios pendientes de pago.")
 else:
-    contab_df = (
-        df_nopag_all[df_nopag_all["Nivel"].eq("Contabilizado Pendiente de Pago")]
-        if "Nivel" in df_nopag_all
-        else df_nopag_all.iloc[0:0]
+    resumen_filter = st.radio(
+        "Tipo de cuenta especial (resumen)",
+        ["Todas", "Cuenta especial", "No cuenta especial"],
+        horizontal=True,
+        index=0,
     )
-    sincontab_df = (
-        df_nopag_all[df_nopag_all["Nivel"].eq("Pendiente de Contabilización")]
-        if "Nivel" in df_nopag_all
-        else df_nopag_all.iloc[0:0]
-    )
-    _draw_debt_panel("Contabilizado Pendiente de Pago", contab_df)
-    _draw_debt_panel("Pendiente de Contabilización", sincontab_df)
+
+    if resumen_filter == "Cuenta especial":
+        df_resumen = df_nopag_all[df_nopag_all["cuenta_especial"] == True]
+    elif resumen_filter == "No cuenta especial":
+        df_resumen = df_nopag_all[df_nopag_all["cuenta_especial"] == False]
+    else:
+        df_resumen = df_nopag_all
 
     categorias_visibles = [
         "Emisión posterior a cuota",
         "Emisión anterior o igual a cuota",
     ]
+    tooltip_plazo = (
+        "Días sin pago = hoy - fecha de emisión. "
+        "Días hasta cuota = fecha de cuota - hoy (negativo indica atraso). "
+        "Margen al emitir = fecha de cuota - fecha de emisión; si es negativo, la cuota nace con atraso."
+    )
     cards_categoria: list[str] = []
     for label in categorias_visibles:
-        subset = df_nopag_all[df_nopag_all["clasificacion_plazo"] == label]
+        subset = df_resumen[df_resumen["clasificacion_plazo"] == label]
         if subset.empty:
             continue
-        total_monto = float(subset["monto_cuota_num"].sum())
-        total_docs = int(len(subset))
-        ce_mask = subset.get("cuenta_especial", pd.Series(False, index=subset.index)).astype(bool)
-        ce_count = int(ce_mask.sum())
-        ce_monto = float(subset.loc[ce_mask, "monto_cuota_num"].sum()) if ce_count else 0.0
-        no_ce_count = total_docs - ce_count
-        no_ce_monto = total_monto - ce_monto
-        dias_prom = _avg_days_from_series(subset.get("dias_sin_pago"))
-
-        stats = [
-            ("Prom. días sin pago", _fmt_days(dias_prom)),
-            ("Cuenta especial", f"{ce_count:,} • {money(ce_monto)}"),
-            ("No cuenta especial", f"{no_ce_count:,} • {money(no_ce_monto)}"),
-        ]
-        cards_categoria.append(
-            _card_html(
-                title=label,
-                value=money(total_monto),
-                subtitle=f"{total_docs:,} honorarios sin pagar",
-                stats=stats,
-                tone="accent" if label == "Emisión posterior a cuota" else "default",
-                compact=False,
+        for flag, flag_label in ((True, "Cuenta especial"), (False, "No cuenta especial")):
+            if "cuenta_especial" in subset.columns:
+                sub = subset[subset["cuenta_especial"] == flag]
+            else:
+                sub = subset if flag else subset.iloc[0:0]
+            if sub.empty:
+                continue
+            amount_series = (
+                pd.to_numeric(sub.get("importe_pendiente"), errors="coerce").fillna(0.0)
+                if "importe_pendiente" in sub
+                else pd.Series(dtype=float)
             )
-        )
+            total_monto = float(amount_series.sum())
+            total_docs = int(len(sub))
+            dias_prom_pago = _avg_days_from_series(sub.get("dias_sin_pago"))
+            dias_prom_cuota = _avg_days_from_series(sub.get("dias_para_cuota"))
+            dias_prom_margen = _avg_days_from_series(sub.get("margen_emision"))
+
+            stats = [
+                ("Prom. días sin pago", _fmt_days(dias_prom_pago)),
+                ("Prom. días hasta cuota", _fmt_days(dias_prom_cuota)),
+                ("Margen al emitir", _fmt_days(dias_prom_margen)),
+            ]
+            cards_categoria.append(
+                _card_html(
+                    title=f"{label} — {flag_label}",
+                    value=money(total_monto),
+                    subtitle=f"{total_docs:,} honorarios sin pagar",
+                    stats=stats,
+                    tone="accent" if label == "Emisión posterior a cuota" else "default",
+                    compact=False,
+                    tooltip=tooltip_plazo,
+                )
+            )
     if cards_categoria:
         safe_markdown(
             "<div class='app-title-block'><h3 style='color:#000;'>Clasificación por fecha de cuota</h3>"
@@ -1373,10 +1310,10 @@ else:
         _render_cards(cards_categoria, layout="grid-2")
 
     resumen_tipo = (
-        df_nopag_all.groupby(["clasificacion_plazo", "estado_cuota"], dropna=False)
+        df_resumen.groupby(["clasificacion_plazo", "estado_cuota"], dropna=False)
         .agg(
-            Monto_Pendiente=("monto_cuota_num", "sum"),
-            Honorarios=("monto_cuota_num", "count"),
+            Monto_Pendiente=("importe_pendiente", "sum"),
+            Honorarios=("importe_pendiente", "count"),
             Prom_Dias_Sin_Pago=("dias_sin_pago", "mean"),
             Prom_Dias_Hasta_Cuota=("dias_para_cuota", "mean"),
         )
@@ -1404,10 +1341,10 @@ else:
         style_table(_table_style(display_tipo))
 
     resumen_ce = (
-        df_nopag_all.groupby(["clasificacion_plazo", "cuenta_especial"], dropna=False)
+        df_resumen.groupby(["clasificacion_plazo", "cuenta_especial"], dropna=False)
         .agg(
-            Monto_Pendiente=("monto_cuota_num", "sum"),
-            Honorarios=("monto_cuota_num", "count"),
+            Monto_Pendiente=("importe_pendiente", "sum"),
+            Honorarios=("importe_pendiente", "count"),
         )
         .reset_index()
     )
