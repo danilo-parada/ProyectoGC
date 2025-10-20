@@ -1130,7 +1130,9 @@ else:
         "Margen al emitir = fecha de cuota - fecha de emisión; si es negativo, la cuota nace con atraso."
     )
     cards_categoria: list[str] = []
-    for label in categorias_visibles:
+    cards_sin_info: list[str] = []
+    categorias_iterables = categorias_visibles + ["Sin información de fechas"]
+    for label in categorias_iterables:
         subset = df_resumen[df_resumen["clasificacion_plazo"] == label]
         if subset.empty:
             continue
@@ -1157,23 +1159,31 @@ else:
                 ("Prom. días hasta cuota", _fmt_days(dias_prom_cuota)),
                 ("Margen al emitir", _fmt_days(dias_prom_margen)),
             ]
-            cards_categoria.append(
-                _card_html(
-                    title=f"{label} — {flag_label}",
-                    value=money(total_monto),
-                    subtitle=f"{total_docs:,} honorarios sin pagar",
-                    stats=stats,
-                    tone="accent" if label == "Emisión posterior a cuota" else "default",
-                    compact=False,
-                    tooltip=tooltip_plazo,
-                )
+            card_html = _card_html(
+                title=f"{label} — {flag_label}",
+                value=money(total_monto),
+                subtitle=f"{total_docs:,} honorarios sin pagar",
+                stats=stats,
+                tone="accent" if label == "Emisión posterior a cuota" else "default",
+                compact=False,
+                tooltip=tooltip_plazo,
             )
+            if label == "Sin información de fechas":
+                cards_sin_info.append(card_html)
+            else:
+                cards_categoria.append(card_html)
     if cards_categoria:
         safe_markdown(
             "<div class='app-title-block'><h3 style='color:#000;'>Clasificación por fecha de cuota</h3>"
             "<p>Desglose basado en la comparación entre emisión y cuota.</p></div>"
         )
         _render_cards(cards_categoria, layout="grid-2")
+    if cards_sin_info:
+        safe_markdown(
+            "<div class='app-title-block'><h3 style='color:#000;'>Sin información de fechas</h3>"
+            "<p>Honorarios sin datos completos de emisión o fecha de cuota.</p></div>"
+        )
+        _render_cards(cards_sin_info, layout="grid-2")
 
     resumen_tipo = (
         df_resumen.groupby(["clasificacion_plazo", "estado_cuota"], dropna=False)
