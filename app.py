@@ -943,6 +943,7 @@ with tab_hon:
                         <li>Selecciona Convenio Honorarios.</li>
                         <li>Elige Consultas Honorarios.</li>
                         <li class="cm-step-final">Haz clic en Cuotas Honorarios (aquí realizas la consulta y descarga).<span class="cm-step-badge">⬅ Aquí descargas</span></li>
+                        <li>En la ventana <strong>Consultar Cuotas Convenios</strong>: marca el check <em>Todos</em> bajo Honorario, selecciona <em>DECRETADO</em> en Estados Convenio y define el período desde y hasta (formato fecha).</li>
                     </ol>
                 </div>
                 <div class="cm-section">
