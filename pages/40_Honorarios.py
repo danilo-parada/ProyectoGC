@@ -928,20 +928,148 @@ if count_pagadas:
                 fig_atraso.update_layout(margin=dict(l=0, r=0, t=40, b=0), legend=dict(orientation="h", yanchor="bottom", y=-0.2))
                 st.plotly_chart(fig_atraso, use_container_width=True)
 
+    st.markdown("#### Histogramas de tiempos (solo PAGADAS)")
+    safe_markdown(
+        """
+        <style>
+        .hon-hist-control-label {
+            font-size: 0.82rem;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            color: var(--app-text-muted, #9db4d5);
+            margin-bottom: 0.2rem;
+        }
+
+        .hon-hist-control-placeholder {
+            font-size: 0.9rem;
+            color: var(--app-text-muted, #9db4d5);
+            padding-top: 0.35rem;
+        }
+
+        .hon-hist-card {
+            background: linear-gradient(145deg, rgba(15, 28, 48, 0.95), rgba(8, 18, 33, 0.92));
+            border: 1px solid rgba(79, 156, 255, 0.18);
+            border-radius: 18px;
+            padding: 1.4rem 1.6rem;
+            margin-top: 1.2rem;
+            box-shadow: 0 24px 40px rgba(8, 19, 40, 0.35);
+        }
+
+        .hon-hist-card--metrics {
+            margin-top: 0.8rem;
+        }
+
+        .hon-hist-card__title {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--app-text, #e6f1ff);
+            margin: 0 0 0.5rem 0;
+        }
+
+        .hon-hist-card__meta {
+            font-size: 0.92rem;
+            color: var(--app-text-muted, #9db4d5);
+            margin-bottom: 1rem;
+        }
+
+        .hon-hist-card__meta strong {
+            color: var(--app-text, #e6f1ff);
+        }
+
+        .hon-hist-indicators {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin: 1.2rem 0 0.6rem 0;
+        }
+
+        .hon-hist-indicator {
+            flex: 1 1 140px;
+            background: rgba(79, 156, 255, 0.12);
+            border: 1px solid rgba(79, 156, 255, 0.28);
+            border-radius: 14px;
+            padding: 0.85rem 1rem;
+        }
+
+        .hon-hist-indicator span {
+            display: block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.35px;
+            color: var(--app-text-muted, #9db4d5);
+            margin-bottom: 0.35rem;
+        }
+
+        .hon-hist-indicator strong {
+            font-size: 1.1rem;
+            color: var(--app-text, #e6f1ff);
+        }
+
+        .hon-hist-details {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            font-size: 0.9rem;
+            color: var(--app-text-muted, #9db4d5);
+            margin-bottom: 0.4rem;
+        }
+
+        .hon-hist-details strong {
+            color: var(--app-text, #e6f1ff);
+        }
+
+        .hon-hist-details__label {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.35px;
+            color: var(--app-text-muted, #9db4d5);
+            flex-basis: 100%;
+        }
+
+        .hon-hist-note {
+            font-size: 0.85rem;
+            color: var(--app-text-muted, #9db4d5);
+            margin-top: 0.35rem;
+        }
+        </style>
+        """
+    )
+
+    control_cols = st.columns((2, 1, 1))
+    col_filter, col_bin, col_max = control_cols
+
     if ce_available:
         ce_filter_options = ["Todas", "Cuenta especial", "No cuenta especial"]
         default_filter = st.session_state.get("honorarios_ce_hist_filter", "Todas")
         if default_filter not in ce_filter_options:
             default_filter = "Todas"
-        ce_filter_value = st.radio(
-            "Filtro de cuenta especial (solo histogramas)",
-            ce_filter_options,
-            index=ce_filter_options.index(default_filter),
-            key="honorarios_ce_hist_filter",
-            horizontal=True,
-        )
+        with col_filter:
+            safe_markdown("<div class='hon-hist-control-label'>Cuenta especial</div>")
+            ce_filter_value = st.radio(
+                "",
+                ce_filter_options,
+                index=ce_filter_options.index(default_filter),
+                key="honorarios_ce_hist_filter",
+                horizontal=True,
+                label_visibility="collapsed",
+            )
     else:
         ce_filter_value = "Todas"
+        with col_filter:
+            safe_markdown("<div class='hon-hist-control-placeholder'>Sin filtro de cuenta especial disponible</div>")
+
+    with col_bin:
+        safe_markdown("<div class='hon-hist-control-label'>Ancho de columnas (días)</div>")
+        bin_default = int(st.session_state.get("hon_hist_bin", 5))
+        bin_default = min(max(bin_default, 1), 60)
+        bin_size = st.slider(
+            "",
+            min_value=1,
+            max_value=60,
+            value=bin_default,
+            key="hon_hist_bin",
+            label_visibility="collapsed",
+        )
 
     mask_filter = pd.Series(True, index=pagadas.index)
     if ce_available:
@@ -968,12 +1096,30 @@ if count_pagadas:
         serie_plan_total = pagadas_view["tiempo_pago_planeado"].dropna()
         serie_real_total = pagadas_view.loc[mask_atraso_view, "tiempo_pago_real"].dropna()
 
-        st.markdown("#### Histogramas de tiempos (solo PAGADAS)")
-        safe_markdown(
-            f"<div style='font-size:20px; font-weight:600;'>Total observaciones planificado: {len(serie_plan_total):,} | Con atraso: {len(serie_real_total):,}</div>",
-        )
-        bin_size = st.slider("Ancho de clase (dias)", 1, 60, 1, key="hon_hist_bin")
-        hist_cols = st.columns(2)
+        value_arrays: List[np.ndarray] = []
+        for serie in (serie_plan_total, serie_real_total):
+            arr = serie.to_numpy()
+            if arr.size:
+                value_arrays.append(arr)
+        if value_arrays:
+            max_domain = int(np.ceil(np.nanmax(np.concatenate(value_arrays))))
+        else:
+            max_domain = 1
+        max_domain = max(max_domain, 1)
+
+        max_default = int(st.session_state.get("hon_hist_max_days", max_domain))
+        max_default = int(np.clip(max_default, 1, max_domain))
+        st.session_state["hon_hist_max_days"] = max_default
+        with col_max:
+            safe_markdown("<div class='hon-hist-control-label'>Máximo de días a visualizar</div>")
+            max_days_visible = st.slider(
+                "",
+                min_value=1,
+                max_value=int(max_domain),
+                value=int(max_default),
+                key="hon_hist_max_days",
+                label_visibility="collapsed",
+            )
 
         def _stats(series: pd.Series) -> Optional[Dict[str, float]]:
             vals = series.dropna().to_numpy()
@@ -986,71 +1132,255 @@ if count_pagadas:
                 "p90": float(np.nanpercentile(vals, 90)),
             }
 
-        with hist_cols[0]:
-            st.markdown("**Tiempo planificado (fecha cuota - fecha emision)**")
-            if serie_plan_total.empty:
-                st.info("Sin datos suficientes para el histograma de tiempo planificado.")
+        serie_plan_visible = serie_plan_total[serie_plan_total <= max_days_visible]
+        excluded_plan = len(serie_plan_total) - len(serie_plan_visible)
+        excluded_plan_vals = serie_plan_total[serie_plan_total > max_days_visible]
+        excluded_plan_max = float(excluded_plan_vals.max()) if not excluded_plan_vals.empty else None
+
+        serie_real_visible = serie_real_total[serie_real_total <= max_days_visible]
+        excluded_real = len(serie_real_total) - len(serie_real_visible)
+        excluded_real_vals = serie_real_total[serie_real_total > max_days_visible]
+        excluded_real_max = float(excluded_real_vals.max()) if not excluded_real_vals.empty else None
+
+        stats_plan_total = _stats(serie_plan_total)
+        stats_real_total = _stats(serie_real_total)
+
+        plan_container = st.container()
+        with plan_container:
+            plan_header_html = (
+                "<div class='hon-hist-card'>"
+                "<div class='hon-hist-card__title'>Tiempo planificado (fecha cuota - fecha emisión)</div>"
+                + f"<div class='hon-hist-card__meta'><strong>Observaciones totales:</strong> {len(serie_plan_total):,} · "
+                + f"Mostrando ≤ {max_days_visible} días: {len(serie_plan_visible):,}"
+                + (
+                    f" · Excluidas: {excluded_plan:,} (hasta {excluded_plan_max:.1f} días)"
+                    if excluded_plan
+                    else ""
+                )
+                + "</div></div>"
+            )
+            safe_markdown(plan_header_html)
+
+            vals_same_day = pagadas_view.loc[mask_same_day_view, "tiempo_pago_planeado"].dropna()
+            vals_anticipada = pagadas_view.loc[mask_anticipada_view, "tiempo_pago_planeado"].dropna()
+            vals_especial = pagadas_view.loc[mask_especial_view, "tiempo_pago_planeado"].dropna()
+
+            vals_same_day_visible = vals_same_day[vals_same_day <= max_days_visible]
+            vals_anticipada_visible = vals_anticipada[vals_anticipada <= max_days_visible]
+            vals_especial_visible = vals_especial[vals_especial <= max_days_visible]
+
+            if serie_plan_visible.empty:
+                st.info(
+                    "Sin datos dentro del rango seleccionado. Ajusta el máximo de días para visualizar las observaciones dentro de plazo."
+                )
             else:
                 fig_plan = go.Figure()
-                vals_same_day = pagadas_view.loc[mask_same_day_view, "tiempo_pago_planeado"].dropna()
-                vals_anticipada = pagadas_view.loc[mask_anticipada_view, "tiempo_pago_planeado"].dropna()
-                vals_especial = pagadas_view.loc[mask_especial_view, "tiempo_pago_planeado"].dropna()
-                safe_markdown(
-                    "<div style='font-size:18px; font-weight:600;'>Desglose dentro de plazo</div>"
-                    f"<div style='font-size:18px;'>Mismo dia: {count_same_day_view:,} | Anticipadas: {count_anticipada_view:,} | Especiales: {count_especial_view:,}</div>"
+                if not vals_same_day_visible.empty:
+                    fig_plan.add_trace(
+                        go.Histogram(
+                            x=vals_same_day_visible,
+                            xbins=dict(size=bin_size),
+                            name="Mismo día",
+                            opacity=0.78,
+                            marker_color="#4E79A7",
+                        )
+                    )
+                if not vals_anticipada_visible.empty:
+                    fig_plan.add_trace(
+                        go.Histogram(
+                            x=vals_anticipada_visible,
+                            xbins=dict(size=bin_size),
+                            name="Anticipadas",
+                            opacity=0.74,
+                            marker_color="#59A14F",
+                        )
+                    )
+                if not vals_especial_visible.empty:
+                    fig_plan.add_trace(
+                        go.Histogram(
+                            x=vals_especial_visible,
+                            xbins=dict(size=bin_size),
+                            name="Pagos especiales",
+                            opacity=0.74,
+                            marker_color="#AF7AA1",
+                        )
+                    )
+
+                fig_plan.update_traces(marker_line_color="rgba(255, 255, 255, 0.18)", marker_line_width=1.1)
+                fig_plan.update_layout(
+                    barmode="overlay",
+                    xaxis_title="Días",
+                    yaxis_title="Cantidad de honorarios",
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.18),
+                    bargap=0.02,
+                    margin=dict(l=28, r=28, t=48, b=40),
+                    template="plotly_dark",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(16, 26, 44, 0.85)",
+                    font=dict(color="#DFE7F5"),
+                    hoverlabel=dict(bgcolor="#121d33", font=dict(color="#E6F1FF")),
                 )
-                if not vals_same_day.empty:
-                    fig_plan.add_trace(go.Histogram(x=vals_same_day, xbins=dict(size=bin_size), name="Mismo dia", opacity=0.7, marker_color="#4E79A7"))
-                if not vals_anticipada.empty:
-                    fig_plan.add_trace(go.Histogram(x=vals_anticipada, xbins=dict(size=bin_size), name="Anticipadas", opacity=0.7, marker_color="#59A14F"))
-                if not vals_especial.empty:
-                    fig_plan.add_trace(go.Histogram(x=vals_especial, xbins=dict(size=bin_size), name="Pagos especiales", opacity=0.7, marker_color="#AF7AA1"))
-                fig_plan.update_layout(barmode="overlay", xaxis_title="Dias", yaxis_title="Cantidad de honorarios", legend=dict(orientation="h", yanchor="bottom", y=-0.15))
-                stats_plan_view = _stats(serie_plan_total)
-                if stats_plan_view:
-                    fig_plan.add_vline(x=stats_plan_view["mean"], line_color="#E15759", line_dash="dash", annotation_text=f"Promedio {stats_plan_view['mean']:.1f}d", annotation_position="top")
+                if stats_plan_total:
+                    fig_plan.add_vline(
+                        x=stats_plan_total["mean"],
+                        line_color="#E15759",
+                        line_width=2,
+                        line_dash="dash",
+                        annotation=dict(
+                            text=f"Promedio {stats_plan_total['mean']:.1f}d",
+                            font=dict(color="#F28E2B"),
+                            bgcolor="rgba(15,25,44,0.85)",
+                        ),
+                    )
                 st.plotly_chart(fig_plan, use_container_width=True)
-                if stats_plan_view:
-                    safe_markdown(
-                        f"<div style='font-size:24px; margin-top:4px;'>Total: {len(serie_plan_total):,} | Promedio: {stats_plan_view['mean']:.1f} dias | P50: {stats_plan_view['p50']:.1f} | P75: {stats_plan_view['p75']:.1f} | P90: {stats_plan_view['p90']:.1f}</div>"
-                    )
 
-                with st.expander('Detalle del calculo del tiempo planificado'):
-                    st.markdown(
-                        """- **Tiempo planificado** = `fecha_cuota` - `fecha_emision` (se fuerza a 0 si el resultado es negativo).
-- **Mismo dia**: `fecha_pago` coincide con `fecha_cuota`.
+            plan_details_html_parts = [
+                "<div class='hon-hist-card hon-hist-card--metrics'>",
+                "<div class='hon-hist-details'>",
+                "<span class='hon-hist-details__label'>Desglose dentro de plazo (todas las observaciones válidas)</span>",
+                f"<span><strong>Mismo día:</strong> {count_same_day_view:,}</span>",
+                f"<span><strong>Anticipadas:</strong> {count_anticipada_view:,}</span>",
+                f"<span><strong>Especiales:</strong> {count_especial_view:,}</span>",
+                "</div>",
+            ]
+
+            if stats_plan_total:
+                plan_details_html_parts.append("<div class='hon-hist-indicators'>")
+                plan_details_html_parts.append(
+                    f"<div class='hon-hist-indicator'><span>Total</span><strong>{len(serie_plan_total):,}</strong></div>"
+                )
+                plan_details_html_parts.append(
+                    f"<div class='hon-hist-indicator'><span>Promedio</span><strong>{stats_plan_total['mean']:.1f} d</strong></div>"
+                )
+                plan_details_html_parts.append(
+                    f"<div class='hon-hist-indicator'><span>P50</span><strong>{stats_plan_total['p50']:.1f} d</strong></div>"
+                )
+                plan_details_html_parts.append(
+                    f"<div class='hon-hist-indicator'><span>P75</span><strong>{stats_plan_total['p75']:.1f} d</strong></div>"
+                )
+                plan_details_html_parts.append(
+                    f"<div class='hon-hist-indicator'><span>P90</span><strong>{stats_plan_total['p90']:.1f} d</strong></div>"
+                )
+                plan_details_html_parts.append("</div>")
+
+            if excluded_plan:
+                note_text = (
+                    f"{excluded_plan:,} observaciones están fuera del rango visualizado (&gt; {max_days_visible} días)."
+                )
+                if excluded_plan_max is not None:
+                    note_text += f" Máximo registrado fuera de rango: {excluded_plan_max:.1f} días."
+                plan_details_html_parts.append(f"<div class='hon-hist-note'>{note_text}</div>")
+
+            plan_details_html_parts.append("</div>")
+            safe_markdown("".join(plan_details_html_parts))
+
+            with st.expander("Detalle del cálculo del tiempo planificado"):
+                st.markdown(
+                    """- **Tiempo planificado** = `fecha_cuota` - `fecha_emision` (se fuerza a 0 si el resultado es negativo).
+- **Mismo día**: `fecha_pago` coincide con `fecha_cuota`.
 - **Anticipadas**: `fecha_pago` es menor que `fecha_cuota`; se conserva el tiempo planificado original.
-- **Pagos especiales**: `fecha_pago` es menor que `fecha_emision`; se usa `fecha_cuota` para el calculo del tiempo.
-- Los conteos presentados incluyen solo filas validas con fechas completas y el filtro seleccionado."""
-                    )
+- **Pagos especiales**: `fecha_pago` es menor que `fecha_emision`; se usa `fecha_cuota` para el cálculo del tiempo.
+- Los conteos presentados incluyen solo filas válidas con fechas completas y el filtro seleccionado."""
+                )
 
-        with hist_cols[1]:
-            st.markdown("**Pagadas con atraso (fecha pago - fecha emision)**")
-            if serie_real_total.empty:
-                st.info("Sin datos de pagos atrasados para el histograma.")
+        real_container = st.container()
+        with real_container:
+            real_header_html = (
+                "<div class='hon-hist-card'>"
+                "<div class='hon-hist-card__title'>Pagadas con atraso (fecha pago - fecha emisión)</div>"
+                + f"<div class='hon-hist-card__meta'><strong>Observaciones totales:</strong> {len(serie_real_total):,} · "
+                + f"Mostrando ≤ {max_days_visible} días: {len(serie_real_visible):,}"
+                + (
+                    f" · Excluidas: {excluded_real:,} (hasta {excluded_real_max:.1f} días)"
+                    if excluded_real
+                    else ""
+                )
+                + "</div></div>"
+            )
+            safe_markdown(real_header_html)
+
+            if serie_real_visible.empty:
+                st.info(
+                    "Sin datos dentro del rango seleccionado. Ajusta el máximo de días para visualizar los pagos con atraso."
+                )
             else:
                 fig_real = go.Figure()
-                fig_real.add_trace(go.Histogram(x=serie_real_total, xbins=dict(size=bin_size), name="Pagadas con atraso", opacity=0.85, marker_color="#E15759"))
-                safe_markdown(
-                    f"<div style='font-size:20px; font-weight:600;'>Total observaciones (atraso): {len(serie_real_total):,}</div>"
+                fig_real.add_trace(
+                    go.Histogram(
+                        x=serie_real_visible,
+                        xbins=dict(size=bin_size),
+                        name="Pagadas con atraso",
+                        opacity=0.85,
+                        marker_color="#E15759",
+                    )
                 )
-                stats_real_view = _stats(serie_real_total)
-                if stats_real_view:
-                    fig_real.add_vline(x=stats_real_view["mean"], line_color="#E15759", line_dash="dash", annotation_text=f"Promedio {stats_real_view['mean']:.1f}d", annotation_position="top")
-                fig_real.update_layout(barmode="overlay", xaxis_title="Dias", yaxis_title="Cantidad de honorarios", legend=dict(orientation="h", yanchor="bottom", y=-0.15))
+                fig_real.update_traces(marker_line_color="rgba(255, 255, 255, 0.18)", marker_line_width=1.1)
+                fig_real.update_layout(
+                    barmode="overlay",
+                    xaxis_title="Días",
+                    yaxis_title="Cantidad de honorarios",
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.18),
+                    bargap=0.02,
+                    margin=dict(l=28, r=28, t=48, b=40),
+                    template="plotly_dark",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(16, 26, 44, 0.85)",
+                    font=dict(color="#DFE7F5"),
+                    hoverlabel=dict(bgcolor="#121d33", font=dict(color="#E6F1FF")),
+                )
+                if stats_real_total:
+                    fig_real.add_vline(
+                        x=stats_real_total["mean"],
+                        line_color="#F28E2B",
+                        line_width=2,
+                        line_dash="dash",
+                        annotation=dict(
+                            text=f"Promedio {stats_real_total['mean']:.1f}d",
+                            font=dict(color="#F28E2B"),
+                            bgcolor="rgba(15,25,44,0.85)",
+                        ),
+                    )
                 st.plotly_chart(fig_real, use_container_width=True)
-                if stats_real_view:
-                    safe_markdown(
-                        f"<div style='font-size:24px; margin-top:4px;'>Total: {len(serie_real_total):,} | Promedio: {stats_real_view['mean']:.1f} dias | P50: {stats_real_view['p50']:.1f} | P75: {stats_real_view['p75']:.1f} | P90: {stats_real_view['p90']:.1f}</div>"
-                    )
 
-                with st.expander('Detalle del calculo del tiempo real pagado'):
-                    st.markdown(
-                        """- **Tiempo real** = `fecha_pago` - `fecha_emision` (solo pagos con `fecha_pago` > `fecha_cuota`).
-- Se fuerza a 0 cuando el resultado es negativo despues de los ajustes.
-- La linea punteada indica el promedio de dias de atraso sobre las observaciones del filtro.
+            real_details_parts = ["<div class='hon-hist-card hon-hist-card--metrics'>"]
+
+            if stats_real_total:
+                real_details_parts.append("<div class='hon-hist-indicators'>")
+                real_details_parts.append(
+                    f"<div class='hon-hist-indicator'><span>Total</span><strong>{len(serie_real_total):,}</strong></div>"
+                )
+                real_details_parts.append(
+                    f"<div class='hon-hist-indicator'><span>Promedio</span><strong>{stats_real_total['mean']:.1f} d</strong></div>"
+                )
+                real_details_parts.append(
+                    f"<div class='hon-hist-indicator'><span>P50</span><strong>{stats_real_total['p50']:.1f} d</strong></div>"
+                )
+                real_details_parts.append(
+                    f"<div class='hon-hist-indicator'><span>P75</span><strong>{stats_real_total['p75']:.1f} d</strong></div>"
+                )
+                real_details_parts.append(
+                    f"<div class='hon-hist-indicator'><span>P90</span><strong>{stats_real_total['p90']:.1f} d</strong></div>"
+                )
+                real_details_parts.append("</div>")
+
+            if excluded_real:
+                note_text_real = (
+                    f"{excluded_real:,} observaciones están fuera del rango visualizado (&gt; {max_days_visible} días)."
+                )
+                if excluded_real_max is not None:
+                    note_text_real += f" Máximo registrado fuera de rango: {excluded_real_max:.1f} días."
+                real_details_parts.append(f"<div class='hon-hist-note'>{note_text_real}</div>")
+
+            real_details_parts.append("</div>")
+            safe_markdown("".join(real_details_parts))
+
+            with st.expander("Detalle del cálculo del tiempo real pagado"):
+                st.markdown(
+                    """- **Tiempo real** = `fecha_pago` - `fecha_emision` (solo pagos con `fecha_pago` > `fecha_cuota`).
+- Se fuerza a 0 cuando el resultado es negativo después de los ajustes.
+- La línea punteada indica el promedio de días de atraso sobre las observaciones del filtro.
 - El histograma excluye registros sin ambas fechas o sin atraso confirmado."""
-                    )
+                )
 else:
     st.info("Aun no hay honorarios marcados como PAGADA para analizar su cumplimiento.")
 
