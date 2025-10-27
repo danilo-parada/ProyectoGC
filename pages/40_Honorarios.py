@@ -90,8 +90,32 @@ def _sum_numeric(df_in: pd.DataFrame, columns: list[str]) -> float:
             return pd.to_numeric(df_in[col], errors="coerce").fillna(0).sum()
     return 0.0
 
-monto_pagado_total = _sum_numeric(pagadas, ["monto_pagado", "liquido_cuota", "fac_monto_total"])
-monto_no_pagado_total = _sum_numeric(no_pagadas, ["monto_autorizado", "monto_cuota", "fac_monto_total"])
+def _paid_amount_series(df_in: pd.DataFrame) -> pd.Series:
+    """Serie de monto pagado efectiva para registros PAGADOS.
+
+    Prioriza columnas típicas en orden y retorna 0.0 cuando faltan.
+    """
+    amount = pd.Series(np.nan, index=df_in.index, dtype=float)
+    for col in ("monto_pagado", "liquido_cuota", "fac_monto_total"):
+        if col in df_in.columns:
+            cand = pd.to_numeric(df_in[col], errors="coerce")
+            amount = amount.fillna(cand)
+    return amount.fillna(0.0)
+
+def _quota_amount_series(df_in: pd.DataFrame) -> pd.Series:
+    """Serie de monto de cuota para calculos base.
+
+    Prioriza `monto_cuota` y cae a `monto_autorizado` o `fac_monto_total`.
+    """
+    amount = pd.Series(np.nan, index=df_in.index, dtype=float)
+    for col in ("monto_cuota", "monto_autorizado", "fac_monto_total"):
+        if col in df_in.columns:
+            cand = pd.to_numeric(df_in[col], errors="coerce")
+            amount = amount.fillna(cand)
+    return amount.fillna(0.0)
+
+monto_pagado_total = _sum_numeric(pagadas, ["monto_cuota", "monto_pagado", "liquido_cuota", "fac_monto_total"])
+monto_no_pagado_total = _sum_numeric(no_pagadas, ["monto_cuota", "monto_autorizado", "fac_monto_total"])
 
 total_docs = len(df)
 count_pagadas = len(pagadas)
@@ -317,8 +341,21 @@ _BUDGET_PANEL_STYLE = """
 
 
 def _table_style(df_disp: pd.DataFrame):
-    sty = df_disp.style if isinstance(df_disp, pd.DataFrame) else df_disp
-    sty = sty.hide(axis="index")
+    # Acepta DataFrame o Styler; si viene None, usa tabla vacía
+    if isinstance(df_disp, pd.DataFrame):
+        sty = df_disp.style
+    else:
+        sty = df_disp
+        if sty is None:
+            sty = pd.DataFrame().style
+    # Oculta índice si es posible (versiones antiguas de pandas pueden diferir)
+    try:
+        sty = sty.hide(axis="index")
+    except Exception:
+        try:
+            sty = sty.hide_index()
+        except Exception:
+            pass
     sty = sty.set_table_styles(
         [
             {
@@ -687,13 +724,16 @@ BASE_KEEP_COLS = [
     "cnv_cuotas",
     "fecha_emision",
     "fecha_cuota",
+    "dias_a_vencer",
+    "Dias_Hasta_Cuota",
     "codigo_estado_cuota",
     "estado_cuota",
     "codigo_centro",
     "monto_cuota",
     "cuenta_especial",
-    "cta_bnc_especial",
-    "fecha_ce",
+    "banco",
+    "cuenta_corriente",
+    "centro_costo_costeo",
 ]
 
 
@@ -713,17 +753,24 @@ def _prep_show(d: pd.DataFrame) -> pd.DataFrame:
             "codigo_centro": "Código Centro",
             "monto_cuota": "Monto Cuota",
             "cuenta_especial": "Cuenta Especial",
-            "cta_bnc_especial": "CTA Banco Especial",
-            "fecha_ce": "Fecha Pago",
+            "banco": "Banco",
+            "cuenta_corriente": "Cuenta Corriente",
+            "centro_costo_costeo": "Centro Costo Costeo",
         }
     )
+    # Asegurar columna Dias_Hasta_Cuota en exporte y remover campo técnico
+    if "Dias_Hasta_Cuota" not in show.columns and "dias_a_vencer" in show.columns:
+        _vexp = pd.to_numeric(show["dias_a_vencer"], errors="coerce")
+        show["Dias_Hasta_Cuota"] =  _vexp
+    if "dias_a_vencer" in show.columns:
+        show = show.drop(columns=["dias_a_vencer"])  # no exportar nombre técnico
 
     for col in (
         "Inicio Convenio",
         "Término Convenio",
         "Fecha Emisión",
         "Fecha Cuota",
-        "Fecha Pago",
+
     ):
         if col in show:
             fechas = pd.to_datetime(show[col], errors="coerce")
@@ -737,9 +784,27 @@ def _prep_show(d: pd.DataFrame) -> pd.DataFrame:
     if "N° Cuotas" in show:
         cuotas = pd.to_numeric(show["N° Cuotas"], errors="coerce")
         show["N° Cuotas"] = cuotas.apply(lambda x: "" if pd.isna(x) else f"{int(x)}")
+        # Ordenar columnas como el PDF (y omitir las no listadas)
+    order_pdf_like = [
+        "RUT",
+        "Inicio Convenio",
+        "T?rmino Convenio",
+        "Fecha Emisi??n",
+        "Fecha Cuota",
+        "Dias_Hasta_Cuota",
+        "Estado Cuota",
+        "C??digo Centro",
+        "Monto Cuota",
+        "Cuenta Especial",
+        "Banco",
+        "Cuenta Corriente",
+        "Centro Costo Costeo",
+    ]
+    existing = [c for c in order_pdf_like if c in show.columns]
+    if existing:
+        show = show[existing]
     return show
-
-
+    
 def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
     keep = [c for c in BASE_KEEP_COLS if c in d.columns]
     out = d[keep].rename(
@@ -756,10 +821,17 @@ def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
             "codigo_centro": "Código Centro",
             "monto_cuota": "Monto Cuota",
             "cuenta_especial": "Cuenta Especial",
-            "cta_bnc_especial": "CTA Banco Especial",
-            "fecha_ce": "Fecha Pago",
+            "banco": "Banco",
+            "cuenta_corriente": "Cuenta Corriente",
+            "centro_costo_costeo": "Centro Costo Costeo",
         }
     )
+    # Garantizar columna Dias_Hasta_Cuota en exporte y remover campo técnico
+    if "Dias_Hasta_Cuota" not in out.columns and "dias_a_vencer" in out.columns:
+        _vexp = pd.to_numeric(out["dias_a_vencer"], errors="coerce")
+        out["Dias_Hasta_Cuota"] = _vexp
+    if "dias_a_vencer" in out.columns:
+        out = out.drop(columns=["dias_a_vencer"])  # no exportar nombre técnico
     if "Proveedor Prioritario" in out:
         out["Proveedor Prioritario"] = out["Proveedor Prioritario"].map({True: "Sí", False: "No"})
     if "Cuenta Especial" in out:
@@ -772,6 +844,25 @@ def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
             [pd.NA if pd.isna(val) else int(val) for val in ap_numeric],
             dtype="Int64",
         )
+    # Ordenar columnas como el PDF (y omitir las no listadas)
+    order_pdf_like = [
+        "RUT",
+        "Inicio Convenio",
+        "TǸrmino Convenio",
+        "Fecha Emisi��n",
+        "Fecha Cuota",
+        "Dias_Hasta_Cuota",
+        "Estado Cuota",
+        "C��digo Centro",
+        "Monto Cuota",
+        "Cuenta Especial",
+        "Banco",
+        "Cuenta Corriente",
+        "Centro Costo Costeo",
+    ]
+    _exist = [c for c in order_pdf_like if c in out.columns]
+    if _exist:
+        out = out[_exist]
     return out
 
 if ce_available and count_pagadas:
@@ -812,9 +903,9 @@ else:
     no_pagadas_ce_df = no_pagadas.iloc[0:0]
     no_pagadas_no_ce_df = no_pagadas.iloc[0:0]
 
-monto_pagado_ce = _sum_numeric(pagadas_ce_df, ["monto_pagado", "liquido_cuota", "fac_monto_total"])
+monto_pagado_ce = _sum_numeric(pagadas_ce_df, ["monto_cuota", "monto_pagado", "liquido_cuota", "fac_monto_total"])
 monto_pagado_no = max(0.0, monto_pagado_total - monto_pagado_ce)
-monto_no_pagado_ce = _sum_numeric(no_pagadas_ce_df, ["monto_autorizado", "monto_cuota", "fac_monto_total"])
+monto_no_pagado_ce = _sum_numeric(no_pagadas_ce_df, ["monto_cuota", "monto_autorizado", "fac_monto_total"])
 monto_no_pagado_no = max(0.0, monto_no_pagado_total - monto_no_pagado_ce)
 
 count_same_day_total = count_same_day
@@ -848,10 +939,164 @@ if count_sin_info > 0:
 amount_cols = st.columns(2)
 with amount_cols[0]:
     breakdown = _amount_html(monto_pagado_ce, monto_pagado_no) if ce_available else None
-    _render_metric_block("Monto pagado", money(monto_pagado_total), breakdown_html=breakdown)
+    _render_metric_block("Monto cuota (pagadas)", money(monto_pagado_total), breakdown_html=breakdown)
 with amount_cols[1]:
     breakdown = _amount_html(monto_no_pagado_ce, monto_no_pagado_no) if ce_available else None
     _render_metric_block("Monto no pagado", money(monto_no_pagado_total), breakdown_html=breakdown)
+
+# ---------------------------------------------------------
+# Tipología de pagos (solo PAGADAS) basada en emisión, cuota y CE
+# ---------------------------------------------------------
+if count_pagadas:
+    em = pd.to_datetime(pagadas.get("fecha_emision_ref"), errors="coerce")
+    cu = pd.to_datetime(pagadas.get("fecha_cuota_ref"), errors="coerce")
+    ce_src = pd.to_datetime(pagadas.get("fecha_ce"), errors="coerce") if "fecha_ce" in pagadas.columns else pd.Series(pd.NaT, index=pagadas.index)
+    ce = ce_src.fillna(pd.to_datetime(pagadas.get("fecha_pago_ref"), errors="coerce"))
+
+    em_lt_cu = (em < cu)
+    em_eq_cu = (em == cu)
+    em_gt_cu = (em > cu)
+    ce_lt_cu = (ce < cu)
+    ce_eq_cu = (ce == cu)
+    ce_gt_cu = (ce > cu)
+    ce_eq_em = (ce == em)
+    ce_gt_em = (ce > em)
+    ce_lt_em = (ce < em)
+
+    # Pago a tiempo vs atrasado y tipo de emisión
+    pago_tiempo = np.where(ce_le_cu := (ce <= cu), "A tiempo", "Atrasado")
+    tipo_emision_lbl = np.where(em_gt_cu, "Emision vencida", np.where((em.notna() & cu.notna()), "Emision valida", "Sin info"))
+
+    # Fecha de pago efectiva (para pagadas): max(ce, cuota)
+    fecha_pago_efectiva = np.where((ce_gt_cu) & ce.notna() & cu.notna(), ce, cu)
+    fecha_pago_efectiva = pd.to_datetime(fecha_pago_efectiva, errors="coerce")
+
+    # Clasificación global según condiciones provistas
+    conds = [
+        # C1: em<cu  ce<cu
+        (em_lt_cu & ce_lt_cu),
+        # C2: em<cu  ce=cu
+        (em_lt_cu & ce_eq_cu),
+        # C3: em<cu  ce>cu
+        (em_lt_cu & ce_gt_cu),
+        # C4: em=cu  ce<cu
+        (em_eq_cu & ce_lt_cu),
+        # C5: em=cu  ce=cu
+        (em_eq_cu & ce_eq_cu),
+        # C6: em=cu  ce>cu
+        (em_eq_cu & ce_gt_cu),
+        # C7: em>cu  ce<=cu
+        (em_gt_cu & (ce <= cu)),
+        # C8: em>cu  ce=em  ce>cu
+        (em_gt_cu & ce_eq_em & ce_gt_cu),
+        # C9: em>cu  ce>em  ce>cu (extemporaneo total)
+        (em_gt_cu & ce_gt_em & ce_gt_cu),
+        # C10: em>cu  ce<em  ce>cu (pago previo a emision)
+        (em_gt_cu & ce_lt_em & ce_gt_cu),
+    ]
+    labels = [
+        "Flujo normal de pago - Pago anticipado",
+        "Flujo normal de pago - Pago mismo dia de fecha cuota",
+        "Pago tardio - Emision valida",
+        "Flujo normal de pago - Pago anticipado",
+        "Flujo normal de pago - Pago mismo dia de fecha cuota",
+        "Pago tardio - Emision valida",
+        "Pago a tiempo - Emision vencida",
+        "Fuera de plazo - CE coincide con emision",
+        "Extemporaneo total",
+        "Pago previo a emision",
+    ]
+    clas_global = np.select(conds, labels, default="Caso no clasificado")
+
+    extemporaneo = np.select(
+        [ (em_gt_cu & ce_gt_em & ce_gt_cu), (em_gt_cu & ce_lt_em & ce_gt_cu) ],
+        [ True, True ],
+        default=False,
+    )
+
+    pagadas["tipo_emision_label"] = tipo_emision_lbl
+    pagadas["pago_tiempo_label"] = pago_tiempo
+    pagadas["fecha_pago_efectiva"] = fecha_pago_efectiva
+    pagadas["clasificacion_global"] = clas_global
+    pagadas["extemporaneo"] = extemporaneo
+    pagadas["monto_cuota_eff"] = _quota_amount_series(pagadas)
+
+    # Resumen por tipo de emision y pago a tiempo
+    resumen_basic = (
+        pagadas.groupby(["tipo_emision_label", "pago_tiempo_label"], dropna=False)
+        .agg(Boletas=("monto_cuota_eff", "count"), Monto_Cuota=("monto_cuota_eff", "sum"))
+        .reset_index()
+        .rename(columns={"tipo_emision_label": "Tipo de Emision", "pago_tiempo_label": "Pago"})
+    )
+    if not resumen_basic.empty:
+        disp = resumen_basic.copy()
+        disp["Monto_Cuota"] = disp["Monto_Cuota"].map(money)
+        disp = sanitize_df(disp)
+        st.markdown("#### Tipologia de pagos (PAGADAS)")
+        style_table(_table_style(disp))
+        st.download_button(
+            "Descargar Tipologia Basica",
+            data=excel_bytes_single(resumen_basic, "Tipologia_Basica_Pagadas"),
+            file_name="pagadas_tipologia_basica.xlsx",
+            disabled=resumen_basic.empty,
+        )
+
+    # Resumen por clasificacion global
+    resumen_global = (
+        pagadas.groupby(["clasificacion_global", "tipo_emision_label"], dropna=False)
+        .agg(Boletas=("monto_cuota_eff", "count"), Monto_Cuota=("monto_cuota_eff", "sum"))
+        .reset_index()
+        .rename(columns={
+            "clasificacion_global": "Clasificacion",
+            "tipo_emision_label": "Tipo de Emision",
+        })
+    )
+    if not resumen_global.empty:
+        disp_g = resumen_global.copy()
+        # Agregar columna de condiciones de fecha segun Clasificacion (reglas generales por grupo)
+        cond_map = {
+            "Flujo normal de pago - Pago anticipado": "emision  cuota  ce < cuota".replace("\u007f", "<="),
+            "Flujo normal de pago - Pago mismo dia de fecha cuota": "emision  cuota  ce = cuota".replace("\u007f", "<="),
+            "Pago tardio - Emision valida": "emision  cuota  ce > cuota".replace("\u007f", "<="),
+            "Pago a tiempo - Emision vencida": "emision > cuota  ce  cuota".replace("\u007f", "<="),
+            "Fuera de plazo - CE coincide con emision": "emision > cuota  ce = emision  ce > cuota".replace("\u007f", "<="),
+            "Extemporaneo total": "emision > cuota  ce > emision  ce > cuota".replace("\u007f", "<="),
+            "Pago previo a emision": "emision > cuota  ce < emision  ce > cuota".replace("\u007f", "<="),
+        }
+        disp_g["Condiciones de fecha"] = disp_g["Clasificacion"].map(cond_map).fillna("")
+        # Reescritura en formato con separadores ';' para mayor claridad
+        cond_map2 = {
+            "Flujo normal de pago - Pago anticipado": "emision <= cuota; ce < cuota",
+            "Flujo normal de pago - Pago mismo dia de fecha cuota": "emision <= cuota; ce = cuota",
+            "Pago tardio - Emision valida": "emision <= cuota; ce > cuota",
+            "Pago a tiempo - Emision vencida": "emision > cuota; ce <= cuota",
+            "Fuera de plazo - CE coincide con emision": "emision > cuota; ce = emision; ce > cuota",
+            "Extemporaneo total": "emision > cuota; ce > emision; ce > cuota",
+            "Pago previo a emision": "emision > cuota; ce < emision; ce > cuota",
+        }
+        disp_g["Condiciones de fecha"] = disp_g["Clasificacion"].map(cond_map2).fillna("")
+
+        # Ordenar por Tipo de Emision (Valida primero, luego Vencida) y luego por Clasificacion
+        order_map = {"Emision valida": 0, "Emision vencida": 1}
+        disp_g["__ord"] = disp_g["Tipo de Emision"].map(order_map).fillna(99)
+        disp_g = disp_g.sort_values(by=["__ord", "Clasificacion"]).drop(columns=["__ord"]) 
+        disp_g["Monto_Cuota"] = disp_g["Monto_Cuota"].map(money)
+        # Reordenar columnas: Tipo de Emision primero y luego condiciones
+        cols_order = ["Tipo de Emision", "Clasificacion", "Condiciones de fecha", "Boletas", "Monto_Cuota"]
+        existing = [c for c in cols_order if c in disp_g.columns]
+        disp_g = disp_g[existing + [c for c in disp_g.columns if c not in existing]]
+        disp_g = sanitize_df(disp_g)
+        st.markdown("#### Tipologia detallada (Clasificacion Global)")
+        style_table(_table_style(disp_g))
+        st.download_button(
+            "Descargar Tipologia Detallada",
+            data=excel_bytes_single(
+                disp_g.rename(columns={"Monto_Cuota": "Monto_Cuota"}),
+                "Tipologia_Clasificacion_Pagadas"
+            ),
+            file_name="pagadas_tipologia_clasificacion.xlsx",
+            disabled=resumen_global.empty,
+        )
 
 if count_pagadas:
     pagadas["tiempo_pago_planeado"] = (pagadas["fecha_cuota_ref"] - pagadas["fecha_emision_ref"]).dt.days
@@ -864,523 +1109,188 @@ if count_pagadas:
     pagadas["tiempo_pago_real"] = pagadas["tiempo_pago_real"].clip(lower=0)
 
     st.markdown("#### Cumplimiento de pagos")
-    pie_cols = st.columns(3) if ce_available else st.columns(1)
+    pie_cols = st.columns(3)
 
     with pie_cols[0]:
-        st.markdown("**Pagadas por cumplimiento**")
+        st.markdown("**A tiempo vs Atrasado (tipologia)**")
         if (count_en_plazo + count_atraso) == 0:
-            st.info("Sin registros con fechas completas para esta vista.")
+            st.info("Sin datos suficientes.")
         else:
-            fig_pie = go.Figure(
+            vals_tip = [int(count_en_plazo), int(count_atraso)]
+            fig_pie2 = go.Figure(
                 data=[
                     go.Pie(
-                        labels=["Dentro de plazo", "Con atraso"],
-                        values=[count_en_plazo, count_atraso],
+                        labels=["A tiempo", "Atrasado"],
+                        values=vals_tip,
                         textinfo="label+percent",
-                        hole=0.35,
-                        marker=dict(colors=["#4E79A7", "#F28E2B"]),
+                        hole=0.45,
+                        marker=dict(colors=["#59A14F", "#E15759"]),
+                        showlegend=False,
                     )
                 ]
             )
-            fig_pie.update_layout(margin=dict(l=0, r=0, t=40, b=0), legend=dict(orientation="h", yanchor="bottom", y=-0.2))
-            st.plotly_chart(fig_pie, use_container_width=True)
-            if count_especial > 0:
-                st.caption("Incluye pagos especiales dentro del plazo.")
+            fig_pie2.update_layout(
+                margin=dict(l=0, r=0, t=20, b=0), height=260,
+            )
+            st.plotly_chart(fig_pie2, use_container_width=True)
 
-    if ce_available:
-        with pie_cols[1]:
-            st.markdown("**Pagadas dentro de plazo por cuenta**")
-            total_in_plazo_ce = en_plazo_ce_count + en_plazo_no_ce_count
-            if total_in_plazo_ce == 0:
-                st.info("Sin datos de pagadas dentro de plazo para graficar.")
-            else:
-                fig_in_plazo = go.Figure(
-                    data=[
-                        go.Pie(
-                            labels=["Cuenta especial", "No cuenta especial"],
-                            values=[en_plazo_ce_count, en_plazo_no_ce_count],
-                            textinfo="label+percent",
-                            hole=0.35,
-                            marker=dict(colors=CE_COLORS),
-                        )
-                    ]
-                )
-                fig_in_plazo.update_layout(margin=dict(l=0, r=0, t=40, b=0), legend=dict(orientation="h", yanchor="bottom", y=-0.2))
-                st.plotly_chart(fig_in_plazo, use_container_width=True)
+    with pie_cols[1]:
+        st.markdown("**Pagadas dentro de plazo por cuenta**")
+        total_in_plazo_ce = en_plazo_ce_count + en_plazo_no_ce_count
+        if total_in_plazo_ce == 0 or not ce_available:
+            st.info("Sin datos de CE/No CE.")
+        else:
+            fig_in_plazo = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=["Cuenta especial", "No cuenta especial"],
+                        values=[en_plazo_ce_count, en_plazo_no_ce_count],
+                        textinfo="label+percent",
+                        hole=0.45,
+                        marker=dict(colors=CE_COLORS),
+                        showlegend=False,
+                    )
+                ]
+            )
+            fig_in_plazo.update_layout(margin=dict(l=0, r=0, t=20, b=0), height=260)
+            st.plotly_chart(fig_in_plazo, use_container_width=True)
 
-        with pie_cols[2]:
-            st.markdown("**Pagadas con atraso por cuenta**")
-            total_atraso_ce = atraso_ce_count + atraso_no_ce_count
-            if total_atraso_ce == 0:
-                st.info("Sin datos de pagos atrasados para graficar.")
-            else:
-                fig_atraso = go.Figure(
-                    data=[
-                        go.Pie(
-                            labels=["Cuenta especial", "No cuenta especial"],
-                            values=[atraso_ce_count, atraso_no_ce_count],
-                            textinfo="label+percent",
-                            hole=0.35,
-                            marker=dict(colors=CE_COLORS),
-                        )
-                    ]
-                )
-                fig_atraso.update_layout(margin=dict(l=0, r=0, t=40, b=0), legend=dict(orientation="h", yanchor="bottom", y=-0.2))
-                st.plotly_chart(fig_atraso, use_container_width=True)
+    with pie_cols[2]:
+        st.markdown("**Pagadas con atraso por cuenta**")
+        total_atraso_ce = atraso_ce_count + atraso_no_ce_count
+        if total_atraso_ce == 0 or not ce_available:
+            st.info("Sin datos de CE/No CE.")
+        else:
+            fig_atraso = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=["Cuenta especial", "No cuenta especial"],
+                        values=[atraso_ce_count, atraso_no_ce_count],
+                        textinfo="label+percent",
+                        hole=0.45,
+                        marker=dict(colors=CE_COLORS),
+                        showlegend=False,
+                    )
+                ]
+            )
+            fig_atraso.update_layout(margin=dict(l=0, r=0, t=20, b=0), height=260)
+            st.plotly_chart(fig_atraso, use_container_width=True)
 
     st.markdown("#### Histogramas de tiempos (solo PAGADAS)")
-    safe_markdown(
-        """
-        <style>
-        .hon-hist-control-label {
-            font-size: 0.82rem;
-            letter-spacing: 0.3px;
-            text-transform: uppercase;
-            color: var(--app-text-muted, #9db4d5);
-            margin-bottom: 0.2rem;
-        }
+    # NUEVO: Histograma de tiempo = fecha_pago_efectiva - fecha_emision, con filtros y promedios general/filtro
+    try:
+        tpe_all = (pd.to_datetime(pagadas.get("fecha_pago_efectiva"), errors="coerce") - pd.to_datetime(pagadas.get("fecha_emision_ref"), errors="coerce")).dt.days.dropna()
+        # Orden de filtros: CE -> Pago -> Emision -> Clasificacion
+        cc1, cc2, cc3, cc4 = st.columns((1.2, 1.4, 1.6, 1.8))
+        # 1) Cuenta especial
+        with cc1:
+            ce_val_new = st.radio("Cuenta especial", ["Todas", "Cuenta especial", "No cuenta especial"], horizontal=True, index=0, key="hon_hist_ce_new")
 
-        .hon-hist-control-placeholder {
-            font-size: 0.9rem;
-            color: var(--app-text-muted, #9db4d5);
-            padding-top: 0.35rem;
-        }
+        # Base para construir opciones dependientes
+        df_opts = pagadas.copy()
+        if ce_available:
+            if ce_val_new == "Cuenta especial":
+                df_opts = df_opts.loc[pagadas_ce_flag]
+            elif ce_val_new == "No cuenta especial":
+                df_opts = df_opts.loc[~pagadas_ce_flag]
 
-        .hon-hist-card {
-            background: linear-gradient(145deg, rgba(15, 28, 48, 0.95), rgba(8, 18, 33, 0.92));
-            border: 1px solid rgba(79, 156, 255, 0.18);
-            border-radius: 18px;
-            padding: 1.4rem 1.6rem;
-            margin-top: 1.2rem;
-            box-shadow: 0 24px 40px rgba(8, 19, 40, 0.35);
-        }
+        # 2) Tipo de pago (A tiempo / Atrasado) basado en CE
+        pago_values = []
+        if "pago_tiempo_label" in df_opts:
+            pago_values = sorted([x for x in df_opts["pago_tiempo_label"].dropna().unique().tolist() if x in ("A tiempo", "Atrasado")])
+        pago_opts = ["Todos"] + pago_values
+        with cc2:
+            pago_sel = st.selectbox("Pago", pago_opts, index=0, key="hon_hist_pago")
+        if pago_sel != "Todos" and "pago_tiempo_label" in df_opts:
+            df_opts = df_opts[df_opts["pago_tiempo_label"] == pago_sel]
 
-        .hon-hist-card--metrics {
-            margin-top: 0.8rem;
-        }
+        # 3) Tipo de Emision dependiente de CE y Pago
+        tipo_values = []
+        if "tipo_emision_label" in df_opts:
+            tipo_values = sorted(df_opts["tipo_emision_label"].dropna().unique().tolist())
+        tipo_opts_new = ["Todos"] + tipo_values
+        with cc3:
+            tipo_sel_new = st.selectbox("Tipo de Emision", tipo_opts_new, index=0, key="hon_hist_tipo")
+        if tipo_sel_new != "Todos" and "tipo_emision_label" in df_opts:
+            df_opts = df_opts[df_opts["tipo_emision_label"] == tipo_sel_new]
 
-        .hon-hist-card__title {
-            font-size: 1.05rem;
-            font-weight: 600;
-            color: var(--app-text, #e6f1ff);
-            margin: 0 0 0.5rem 0;
-        }
+        # 4) Clasificacion dependiente de CE, Pago y Emision
+        class_values = []
+        if "clasificacion_global" in df_opts:
+            class_values = sorted(df_opts["clasificacion_global"].dropna().unique().tolist())
+        class_opts_new = ["Todos"] + class_values if class_values else ["Todos"]
+        with cc4:
+            class_sel_new = st.selectbox("Clasificacion", class_opts_new, index=0, key="hon_hist_cls")
 
-        .hon-hist-card__meta {
-            font-size: 0.92rem;
-            color: var(--app-text-muted, #9db4d5);
-            margin-bottom: 1rem;
-        }
+        # Ajustar coherencia: si la clasificacion seleccionada deja sin opciones de Pago, volver a "Todos"
+        df_check = df_opts.copy()
+        if class_sel_new != "Todos" and "clasificacion_global" in df_check:
+            df_check = df_check[df_check["clasificacion_global"] == class_sel_new]
+        if "pago_tiempo_label" in df_check:
+            pago_after_cls = set([x for x in df_check["pago_tiempo_label"].dropna().unique().tolist() if x in ("A tiempo", "Atrasado")])
+            if pago_sel != "Todos" and pago_sel not in pago_after_cls:
+                st.session_state["hon_hist_pago"] = "Todos"
+                pago_sel = "Todos"
+        cbin, cmax = st.columns((1,1))
+        with cbin:
+            bin_size_new = st.slider("Ancho de columnas (dias)", 1, 60, 2)
+        max_domain_new = int(max(1, np.ceil(np.nanmax(tpe_all)))) if not tpe_all.empty else 1
+        with cmax:
+            max_days_new = st.slider("Max dias a mostrar", 1, int(max_domain_new), int(max_domain_new))
+        mask_new = pd.Series(True, index=pagadas.index)
+        if ce_available:
+            if ce_val_new == "Cuenta especial":
+                mask_new &= pagadas_ce_flag
+            elif ce_val_new == "No cuenta especial":
+                mask_new &= ~pagadas_ce_flag
+        if "pago_tiempo_label" in pagadas and pago_sel != "Todos":
+            mask_new &= (pagadas["pago_tiempo_label"] == pago_sel)
+        if "tipo_emision_label" in pagadas and tipo_sel_new != "Todos":
+            mask_new &= (pagadas["tipo_emision_label"] == tipo_sel_new)
+        if "clasificacion_global" in pagadas and class_sel_new != "Todos":
+            mask_new &= (pagadas["clasificacion_global"] == class_sel_new)
+        tpe_fil = (pd.to_datetime(pagadas.loc[mask_new, "fecha_pago_efectiva"], errors="coerce") - pd.to_datetime(pagadas.loc[mask_new, "fecha_emision_ref"], errors="coerce")).dt.days.dropna()
+        tpe_all_vis = tpe_all[tpe_all <= max_days_new]
+        tpe_fil_vis = tpe_fil[tpe_fil <= max_days_new]
+        mean_all = float(np.nanmean(tpe_all)) if not tpe_all.empty else float("nan")
+        mean_fil = float(np.nanmean(tpe_fil)) if not tpe_fil.empty else float("nan")
+        fig_new = go.Figure()
+        if not tpe_all_vis.empty:
+            fig_new.add_histogram(x=tpe_all_vis, xbins=dict(size=bin_size_new), name="General", opacity=0.45, marker_color="#9aa5ff")
+        if not tpe_fil_vis.empty:
+            fig_new.add_histogram(x=tpe_fil_vis, xbins=dict(size=bin_size_new), name="Filtro", opacity=0.75, marker_color="#F28E2B")
+        fig_new.update_layout(barmode="overlay", bargap=0.08, height=560, margin=dict(l=28,r=28,t=36,b=36), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(16,26,44,0.85)", font=dict(color="#DFE7F5"), legend=dict(orientation="h", yanchor="bottom", y=-0.2), xaxis_title="Dias", yaxis_title="Cantidad de honorarios")
+        if not np.isnan(mean_all):
+            fig_new.add_vline(x=mean_all, line_color="#3f51b5", line_width=2, line_dash="dash", annotation=dict(text=f"Prom gral {mean_all:.1f}d", font=dict(color="#9aa5ff"), bgcolor="rgba(15,25,44,0.85)"))
+        if not np.isnan(mean_fil):
+            fig_new.add_vline(x=mean_fil, line_color="#F28E2B", line_width=2, line_dash="dot", annotation=dict(text=f"Prom filtro {mean_fil:.1f}d", font=dict(color="#F28E2B"), bgcolor="rgba(15,25,44,0.85)"))
+        st.plotly_chart(fig_new, use_container_width=True)
+        # Indicadores como tarjetas horizontales (estilo app-card)
+        def _fmt_days(x: float) -> str:
+            try:
+                return f"{float(x):.1f} d"
+            except Exception:
+                return "s/d"
 
-        .hon-hist-card__meta strong {
-            color: var(--app-text, #e6f1ff);
-        }
+        cards_metrics: list[str] = []
+        cards_metrics.append(_card_html("Total (general)", f"{len(tpe_all):,}", compact=True))
+        cards_metrics.append(_card_html("Prom general", _fmt_days(mean_all) if not np.isnan(mean_all) else "s/d", compact=True))
+        cards_metrics.append(_card_html("Total (filtro)", f"{len(tpe_fil):,}", compact=True, tone="accent"))
+        cards_metrics.append(_card_html("Prom filtro", _fmt_days(mean_fil) if not np.isnan(mean_fil) else "s/d", compact=True, tone="accent"))
 
-        .hon-hist-indicators {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.75rem;
-            margin: 1.2rem 0 0.6rem 0;
-        }
+        if not tpe_fil.empty:
+            p50 = float(np.nanpercentile(tpe_fil, 50))
+            p75 = float(np.nanpercentile(tpe_fil, 75))
+            p90 = float(np.nanpercentile(tpe_fil, 90))
+            cards_metrics.append(_card_html("P50 (filtro)", _fmt_days(p50), compact=True))
+            cards_metrics.append(_card_html("P75 (filtro)", _fmt_days(p75), compact=True))
+            cards_metrics.append(_card_html("P90 (filtro)", _fmt_days(p90), compact=True))
 
-        .hon-hist-indicator {
-            flex: 1 1 140px;
-            background: rgba(79, 156, 255, 0.12);
-            border: 1px solid rgba(79, 156, 255, 0.28);
-            border-radius: 14px;
-            padding: 0.85rem 1rem;
-        }
-
-        .hon-hist-indicator span {
-            display: block;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.35px;
-            color: var(--app-text-muted, #9db4d5);
-            margin-bottom: 0.35rem;
-        }
-
-        .hon-hist-indicator strong {
-            font-size: 1.1rem;
-            color: var(--app-text, #e6f1ff);
-        }
-
-        .hon-hist-details {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 1rem;
-            font-size: 0.9rem;
-            color: var(--app-text-muted, #9db4d5);
-            margin-bottom: 0.4rem;
-        }
-
-        .hon-hist-details strong {
-            color: var(--app-text, #e6f1ff);
-        }
-
-        .hon-hist-details__label {
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            letter-spacing: 0.35px;
-            color: var(--app-text-muted, #9db4d5);
-            flex-basis: 100%;
-        }
-
-        .hon-hist-note {
-            font-size: 0.85rem;
-            color: var(--app-text-muted, #9db4d5);
-            margin-top: 0.35rem;
-        }
-        </style>
-        """
-    )
-
-    control_cols = st.columns((2, 1, 1))
-    col_filter, col_bin, col_max = control_cols
-
-    if ce_available:
-        ce_filter_options = ["Todas", "Cuenta especial", "No cuenta especial"]
-        default_filter = st.session_state.get("honorarios_ce_hist_filter", "Todas")
-        if default_filter not in ce_filter_options:
-            default_filter = "Todas"
-        with col_filter:
-            safe_markdown("<div class='hon-hist-control-label'>Cuenta especial</div>")
-            ce_filter_value = st.radio(
-                "",
-                ce_filter_options,
-                index=ce_filter_options.index(default_filter),
-                key="honorarios_ce_hist_filter",
-                horizontal=True,
-                label_visibility="collapsed",
-            )
-    else:
-        ce_filter_value = "Todas"
-        with col_filter:
-            safe_markdown("<div class='hon-hist-control-placeholder'>Sin filtro de cuenta especial disponible</div>")
-
-    with col_bin:
-        safe_markdown("<div class='hon-hist-control-label'>Ancho de columnas (días)</div>")
-        bin_default = int(st.session_state.get("hon_hist_bin", 5))
-        bin_default = min(max(bin_default, 1), 60)
-        bin_size = st.slider(
-            "",
-            min_value=1,
-            max_value=60,
-            value=bin_default,
-            key="hon_hist_bin",
-            label_visibility="collapsed",
-        )
-
-    mask_filter = pd.Series(True, index=pagadas.index)
-    if ce_available:
-        if ce_filter_value == "Cuenta especial":
-            mask_filter = pagadas_ce_flag
-        elif ce_filter_value == "No cuenta especial":
-            mask_filter = ~pagadas_ce_flag
-
-    selected_idx = pagadas.index[mask_filter]
-    pagadas_view = pagadas.loc[selected_idx]
-
-    if pagadas_view.empty:
-        st.info("No hay honorarios pagados para el filtro seleccionado.")
-    else:
-        mask_same_day_view = mask_same_day.loc[selected_idx]
-        mask_anticipada_view = mask_anticipada_regular.loc[selected_idx]
-        mask_especial_view = mask_especial_plazo.loc[selected_idx]
-        mask_atraso_view = mask_atraso.loc[selected_idx]
-
-        count_same_day_view = int(mask_same_day_view.sum())
-        count_anticipada_view = int(mask_anticipada_view.sum())
-        count_especial_view = int(mask_especial_view.sum())
-
-        serie_plan_total = pagadas_view["tiempo_pago_planeado"].dropna()
-        serie_real_total = pagadas_view.loc[mask_atraso_view, "tiempo_pago_real"].dropna()
-
-        value_arrays: List[np.ndarray] = []
-        for serie in (serie_plan_total, serie_real_total):
-            arr = serie.to_numpy()
-            if arr.size:
-                value_arrays.append(arr)
-        if value_arrays:
-            max_domain = int(np.ceil(np.nanmax(np.concatenate(value_arrays))))
-        else:
-            max_domain = 1
-        max_domain = max(max_domain, 1)
-
-        max_default = int(st.session_state.get("hon_hist_max_days", max_domain))
-        max_default = int(np.clip(max_default, 1, max_domain))
-        st.session_state["hon_hist_max_days"] = max_default
-        with col_max:
-            safe_markdown("<div class='hon-hist-control-label'>Máximo de días a visualizar</div>")
-            max_days_visible = st.slider(
-                "",
-                min_value=1,
-                max_value=int(max_domain),
-                value=int(max_default),
-                key="hon_hist_max_days",
-                label_visibility="collapsed",
-            )
-
-        def _stats(series: pd.Series) -> Optional[Dict[str, float]]:
-            vals = series.dropna().to_numpy()
-            if vals.size == 0:
-                return None
-            return {
-                "mean": float(np.nanmean(vals)),
-                "p50": float(np.nanpercentile(vals, 50)),
-                "p75": float(np.nanpercentile(vals, 75)),
-                "p90": float(np.nanpercentile(vals, 90)),
-            }
-
-        serie_plan_visible = serie_plan_total[serie_plan_total <= max_days_visible]
-        excluded_plan = len(serie_plan_total) - len(serie_plan_visible)
-        excluded_plan_vals = serie_plan_total[serie_plan_total > max_days_visible]
-        excluded_plan_max = float(excluded_plan_vals.max()) if not excluded_plan_vals.empty else None
-
-        serie_real_visible = serie_real_total[serie_real_total <= max_days_visible]
-        excluded_real = len(serie_real_total) - len(serie_real_visible)
-        excluded_real_vals = serie_real_total[serie_real_total > max_days_visible]
-        excluded_real_max = float(excluded_real_vals.max()) if not excluded_real_vals.empty else None
-
-        stats_plan_total = _stats(serie_plan_total)
-        stats_real_total = _stats(serie_real_total)
-
-        plan_container = st.container()
-        with plan_container:
-            plan_header_html = (
-                "<div class='hon-hist-card'>"
-                "<div class='hon-hist-card__title'>Tiempo planificado (fecha cuota - fecha emisión)</div>"
-                + f"<div class='hon-hist-card__meta'><strong>Observaciones totales:</strong> {len(serie_plan_total):,} · "
-                + f"Mostrando ≤ {max_days_visible} días: {len(serie_plan_visible):,}"
-                + (
-                    f" · Excluidas: {excluded_plan:,} (hasta {excluded_plan_max:.1f} días)"
-                    if excluded_plan
-                    else ""
-                )
-                + "</div></div>"
-            )
-            safe_markdown(plan_header_html)
-
-            vals_same_day = pagadas_view.loc[mask_same_day_view, "tiempo_pago_planeado"].dropna()
-            vals_anticipada = pagadas_view.loc[mask_anticipada_view, "tiempo_pago_planeado"].dropna()
-            vals_especial = pagadas_view.loc[mask_especial_view, "tiempo_pago_planeado"].dropna()
-
-            vals_same_day_visible = vals_same_day[vals_same_day <= max_days_visible]
-            vals_anticipada_visible = vals_anticipada[vals_anticipada <= max_days_visible]
-            vals_especial_visible = vals_especial[vals_especial <= max_days_visible]
-
-            if serie_plan_visible.empty:
-                st.info(
-                    "Sin datos dentro del rango seleccionado. Ajusta el máximo de días para visualizar las observaciones dentro de plazo."
-                )
-            else:
-                fig_plan = go.Figure()
-                if not vals_same_day_visible.empty:
-                    fig_plan.add_trace(
-                        go.Histogram(
-                            x=vals_same_day_visible,
-                            xbins=dict(size=bin_size),
-                            name="Mismo día",
-                            opacity=0.78,
-                            marker_color="#4E79A7",
-                        )
-                    )
-                if not vals_anticipada_visible.empty:
-                    fig_plan.add_trace(
-                        go.Histogram(
-                            x=vals_anticipada_visible,
-                            xbins=dict(size=bin_size),
-                            name="Anticipadas",
-                            opacity=0.74,
-                            marker_color="#59A14F",
-                        )
-                    )
-                if not vals_especial_visible.empty:
-                    fig_plan.add_trace(
-                        go.Histogram(
-                            x=vals_especial_visible,
-                            xbins=dict(size=bin_size),
-                            name="Pagos especiales",
-                            opacity=0.74,
-                            marker_color="#AF7AA1",
-                        )
-                    )
-
-                fig_plan.update_traces(marker_line_color="rgba(255, 255, 255, 0.18)", marker_line_width=1.1)
-                fig_plan.update_layout(
-                    barmode="overlay",
-                    xaxis_title="Días",
-                    yaxis_title="Cantidad de honorarios",
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.18),
-                    bargap=0.02,
-                    margin=dict(l=28, r=28, t=48, b=40),
-                    template="plotly_dark",
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(16, 26, 44, 0.85)",
-                    font=dict(color="#DFE7F5"),
-                    hoverlabel=dict(bgcolor="#121d33", font=dict(color="#E6F1FF")),
-                )
-                if stats_plan_total:
-                    fig_plan.add_vline(
-                        x=stats_plan_total["mean"],
-                        line_color="#E15759",
-                        line_width=2,
-                        line_dash="dash",
-                        annotation=dict(
-                            text=f"Promedio {stats_plan_total['mean']:.1f}d",
-                            font=dict(color="#F28E2B"),
-                            bgcolor="rgba(15,25,44,0.85)",
-                        ),
-                    )
-                st.plotly_chart(fig_plan, use_container_width=True)
-
-            plan_details_html_parts = [
-                "<div class='hon-hist-card hon-hist-card--metrics'>",
-                "<div class='hon-hist-details'>",
-                "<span class='hon-hist-details__label'>Desglose dentro de plazo (todas las observaciones válidas)</span>",
-                f"<span><strong>Mismo día:</strong> {count_same_day_view:,}</span>",
-                f"<span><strong>Anticipadas:</strong> {count_anticipada_view:,}</span>",
-                f"<span><strong>Especiales:</strong> {count_especial_view:,}</span>",
-                "</div>",
-            ]
-
-            if stats_plan_total:
-                plan_details_html_parts.append("<div class='hon-hist-indicators'>")
-                plan_details_html_parts.append(
-                    f"<div class='hon-hist-indicator'><span>Total</span><strong>{len(serie_plan_total):,}</strong></div>"
-                )
-                plan_details_html_parts.append(
-                    f"<div class='hon-hist-indicator'><span>Promedio</span><strong>{stats_plan_total['mean']:.1f} d</strong></div>"
-                )
-                plan_details_html_parts.append(
-                    f"<div class='hon-hist-indicator'><span>P50</span><strong>{stats_plan_total['p50']:.1f} d</strong></div>"
-                )
-                plan_details_html_parts.append(
-                    f"<div class='hon-hist-indicator'><span>P75</span><strong>{stats_plan_total['p75']:.1f} d</strong></div>"
-                )
-                plan_details_html_parts.append(
-                    f"<div class='hon-hist-indicator'><span>P90</span><strong>{stats_plan_total['p90']:.1f} d</strong></div>"
-                )
-                plan_details_html_parts.append("</div>")
-
-            if excluded_plan:
-                note_text = (
-                    f"{excluded_plan:,} observaciones están fuera del rango visualizado (&gt; {max_days_visible} días)."
-                )
-                if excluded_plan_max is not None:
-                    note_text += f" Máximo registrado fuera de rango: {excluded_plan_max:.1f} días."
-                plan_details_html_parts.append(f"<div class='hon-hist-note'>{note_text}</div>")
-
-            plan_details_html_parts.append("</div>")
-            safe_markdown("".join(plan_details_html_parts))
-
-            with st.expander("Detalle del cálculo del tiempo planificado"):
-                st.markdown(
-                    """- **Tiempo planificado** = `fecha_cuota` - `fecha_emision` (se fuerza a 0 si el resultado es negativo).
-- **Mismo día**: `fecha_pago` coincide con `fecha_cuota`.
-- **Anticipadas**: `fecha_pago` es menor que `fecha_cuota`; se conserva el tiempo planificado original.
-- **Pagos especiales**: `fecha_pago` es menor que `fecha_emision`; se usa `fecha_cuota` para el cálculo del tiempo.
-- Los conteos presentados incluyen solo filas válidas con fechas completas y el filtro seleccionado."""
-                )
-
-        real_container = st.container()
-        with real_container:
-            real_header_html = (
-                "<div class='hon-hist-card'>"
-                "<div class='hon-hist-card__title'>Pagadas con atraso (fecha pago - fecha emisión)</div>"
-                + f"<div class='hon-hist-card__meta'><strong>Observaciones totales:</strong> {len(serie_real_total):,} · "
-                + f"Mostrando ≤ {max_days_visible} días: {len(serie_real_visible):,}"
-                + (
-                    f" · Excluidas: {excluded_real:,} (hasta {excluded_real_max:.1f} días)"
-                    if excluded_real
-                    else ""
-                )
-                + "</div></div>"
-            )
-            safe_markdown(real_header_html)
-
-            if serie_real_visible.empty:
-                st.info(
-                    "Sin datos dentro del rango seleccionado. Ajusta el máximo de días para visualizar los pagos con atraso."
-                )
-            else:
-                fig_real = go.Figure()
-                fig_real.add_trace(
-                    go.Histogram(
-                        x=serie_real_visible,
-                        xbins=dict(size=bin_size),
-                        name="Pagadas con atraso",
-                        opacity=0.85,
-                        marker_color="#E15759",
-                    )
-                )
-                fig_real.update_traces(marker_line_color="rgba(255, 255, 255, 0.18)", marker_line_width=1.1)
-                fig_real.update_layout(
-                    barmode="overlay",
-                    xaxis_title="Días",
-                    yaxis_title="Cantidad de honorarios",
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.18),
-                    bargap=0.02,
-                    margin=dict(l=28, r=28, t=48, b=40),
-                    template="plotly_dark",
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(16, 26, 44, 0.85)",
-                    font=dict(color="#DFE7F5"),
-                    hoverlabel=dict(bgcolor="#121d33", font=dict(color="#E6F1FF")),
-                )
-                if stats_real_total:
-                    fig_real.add_vline(
-                        x=stats_real_total["mean"],
-                        line_color="#F28E2B",
-                        line_width=2,
-                        line_dash="dash",
-                        annotation=dict(
-                            text=f"Promedio {stats_real_total['mean']:.1f}d",
-                            font=dict(color="#F28E2B"),
-                            bgcolor="rgba(15,25,44,0.85)",
-                        ),
-                    )
-                st.plotly_chart(fig_real, use_container_width=True)
-
-            real_details_parts = ["<div class='hon-hist-card hon-hist-card--metrics'>"]
-
-            if stats_real_total:
-                real_details_parts.append("<div class='hon-hist-indicators'>")
-                real_details_parts.append(
-                    f"<div class='hon-hist-indicator'><span>Total</span><strong>{len(serie_real_total):,}</strong></div>"
-                )
-                real_details_parts.append(
-                    f"<div class='hon-hist-indicator'><span>Promedio</span><strong>{stats_real_total['mean']:.1f} d</strong></div>"
-                )
-                real_details_parts.append(
-                    f"<div class='hon-hist-indicator'><span>P50</span><strong>{stats_real_total['p50']:.1f} d</strong></div>"
-                )
-                real_details_parts.append(
-                    f"<div class='hon-hist-indicator'><span>P75</span><strong>{stats_real_total['p75']:.1f} d</strong></div>"
-                )
-                real_details_parts.append(
-                    f"<div class='hon-hist-indicator'><span>P90</span><strong>{stats_real_total['p90']:.1f} d</strong></div>"
-                )
-                real_details_parts.append("</div>")
-
-            if excluded_real:
-                note_text_real = (
-                    f"{excluded_real:,} observaciones están fuera del rango visualizado (&gt; {max_days_visible} días)."
-                )
-                if excluded_real_max is not None:
-                    note_text_real += f" Máximo registrado fuera de rango: {excluded_real_max:.1f} días."
-                real_details_parts.append(f"<div class='hon-hist-note'>{note_text_real}</div>")
-
-            real_details_parts.append("</div>")
-            safe_markdown("".join(real_details_parts))
-
-            with st.expander("Detalle del cálculo del tiempo real pagado"):
-                st.markdown(
-                    """- **Tiempo real** = `fecha_pago` - `fecha_emision` (solo pagos con `fecha_pago` > `fecha_cuota`).
-- Se fuerza a 0 cuando el resultado es negativo después de los ajustes.
-- La línea punteada indica el promedio de días de atraso sobre las observaciones del filtro.
-- El histograma excluye registros sin ambas fechas o sin atraso confirmado."""
-                )
+        _render_cards(cards_metrics, layout="grid")
+    except Exception:
+        pass
+    # LEGACY HISTOGRAM BLOCK DISABLED
+# legacy removed
 else:
     st.info("Aun no hay honorarios marcados como PAGADA para analizar su cumplimiento.")
 
@@ -1490,7 +1400,7 @@ else:
                 ("Margen al emitir", _fmt_days(dias_prom_margen)),
             ]
             card_html = _card_html(
-                title=f"{label} — {flag_label}",
+                title=f"{label}  {flag_label}",
                 value=money(total_monto),
                 subtitle=f"{total_docs:,} honorarios sin pagar",
                 stats=stats,
@@ -1532,18 +1442,21 @@ else:
         display_tipo["Honorarios"] = display_tipo["Honorarios"].astype(int)
         display_tipo["Prom_Dias_Sin_Pago"] = display_tipo["Prom_Dias_Sin_Pago"].apply(_fmt_days)
         display_tipo["Prom_Dias_Hasta_Cuota"] = display_tipo["Prom_Dias_Hasta_Cuota"].apply(_fmt_days)
-        display_tipo = display_tipo.rename(
-            columns={
-                "clasificacion_plazo": "Clasificación",
-                "estado_cuota": "Estado Cuota",
-                "Monto_Pendiente": "Monto Pendiente",
-                "Honorarios": "Cant. Honorarios",
-                "Prom_Dias_Sin_Pago": "Prom. días sin pago",
-                "Prom_Dias_Hasta_Cuota": "Prom. días hasta cuota",
-            }
-        )
+        display_tipo = display_tipo.rename(columns={
+            "clasificacion_plazo": "Clasificacion",
+            "estado_cuota": "Estado Cuota",
+            "Monto_Pendiente": "Monto Pendiente",
+            "Honorarios": "Cant. Honorarios",
+        })
+        safe_markdown("""
+        <div class="app-note">
+          <strong>Como leer estos promedios</strong><br>
+          <b>Prom. dias sin pago</b>: dias desde la emision hasta hoy (antiguedad).<br>
+          <b>Prom. dias hasta cuota</b>: dias desde hoy hasta la fecha de cuota (negativo = vencido).
+        </div>
+        """)
         display_tipo = sanitize_df(display_tipo)
-        safe_markdown("**Resumen por clasificación y estado de cuota**")
+        safe_markdown("**Resumen por clasificacion y estado de cuota**")
         style_table(_table_style(display_tipo))
 
     resumen_ce = (
@@ -1753,6 +1666,13 @@ else:
 candidatas_base = _apply_horizon_filter(df_nopag_loc, horizonte)
 candidatas_prior = _prioritize_documents(candidatas_base, crit_sel)
 
+# Asegurar columna de prioridad de tiempo para tablas (negativo = vencido)
+if "dias_a_vencer" in candidatas_prior.columns:
+    _vals = pd.to_numeric(candidatas_prior["dias_a_vencer"], errors="coerce")
+    candidatas_prior["Dias_Hasta_Cuota"] = pd.array(
+        [pd.NA if pd.isna(v) else int(v) for v in _vals], dtype="Int64"
+    )
+
 
 # =========================================================
 # 5) Presupuesto del Día (Selección Automática)
@@ -1833,12 +1753,12 @@ else:
                 remaining_amount_all = float(pendientes_info.get("remaining_amount", 0.0))
                 if next_info:
                     help_text = f"Se sumarán {money(next_info['adicional'])} para incorporar el siguiente honorario."
-                    button_label = "➕ Agregar honorario extra"
+                    button_label = " Agregar honorario extra"
                     if st.button(
                         button_label,
                         key="hon_add_extra_invoice",
                         help=(
-                            f"{next_info['proveedor']} — Documento {next_info['documento']} por {money(next_info['monto'])}. "
+                            f"{next_info['proveedor']}  Documento {next_info['documento']} por {money(next_info['monto'])}. "
                             + help_text
                         ),
                         use_container_width=True,
@@ -1851,7 +1771,7 @@ else:
                         except AttributeError:
                             st.experimental_rerun()
                     safe_markdown(
-                        f"<p class='budget-panel__resume-note'>Próximo: {next_info['proveedor']} — Documento {next_info['documento']} ({money(next_info['monto'])})</p>"
+                        f"<p class='budget-panel__resume-note'>Próximo: {next_info['proveedor']}  Documento {next_info['documento']} ({money(next_info['monto'])})</p>"
                     )
                     safe_markdown(
                         f"<p class='budget-panel__resume-note budget-panel__resume-note--muted'>Ajuste necesario: {money(next_info['adicional'])}</p>"
@@ -1866,7 +1786,7 @@ else:
                         + f"Nuevo total: {money(full_budget)}."
                     )
                     if st.button(
-                        "🧾 Agregar todos los honorarios pendientes",
+                        " Agregar todos los honorarios pendientes",
                         key="hon_add_all_invoices",
                         help=button_help,
                         use_container_width=True,
@@ -1893,6 +1813,11 @@ else:
         )
 
         seleccion = seleccion_df
+        if isinstance(seleccion, pd.DataFrame) and "dias_a_vencer" in seleccion.columns:
+            _vals2 = pd.to_numeric(seleccion["dias_a_vencer"], errors="coerce")
+            seleccion["Dias_Hasta_Cuota"] = pd.array(
+                [pd.NA if pd.isna(v) else int(v) for v in _vals2], dtype="Int64"
+            )
 
         resumen_cards = [
             _card_html("Presupuesto ingresado", money(float(monto_presu)), subtitle="Disponible hoy", tone="accent"),
@@ -1904,7 +1829,7 @@ else:
                 _card_html(
                     "Próximo honorario a incorporar",
                     money(next_info["monto"]),
-                    subtitle=f"{next_info['proveedor']} — Documento {next_info['documento']}",
+                    subtitle=f"{next_info['proveedor']}  Documento {next_info['documento']}",
                     tag=f"Faltan {money(next_info['adicional'])}" if next_info["adicional"] > 0 else "Disponible",
                     tag_variant="warning" if next_info["adicional"] > 0 else "success",
                     tone="accent",
@@ -1928,10 +1853,10 @@ candidatas_display = sanitize_df(candidatas_display)
 seleccion_display = sanitize_df(seleccion_display)
 
 with tab_candidatas:
-    st.markdown("**Candidatas a Pago (todas las cuotas — ordenadas por prioridad)**")
+    st.markdown("**Candidatas a Pago (todas las cuotas  ordenadas por prioridad)**")
     style_table(_table_style(candidatas_display), visible_rows=15)
     st.download_button(
-        "⬇️ Descargar Candidatas",
+        "️ Descargar Candidatas",
         data=excel_bytes_single(_prep_export(candidatas_prior), "HonorariosCandidatas"),
         file_name="honorarios_candidatas.xlsx",
         disabled=candidatas_prior.empty,
@@ -1941,13 +1866,13 @@ with tab_seleccion:
     safe_markdown(
         """
         <div class="app-note">
-            <strong>Selección a pagar hoy</strong> — bloque crítico de honorarios.
+            <strong>Selección a pagar hoy</strong>  bloque crítico de honorarios.
         </div>
         """
     )
     style_table(_table_style(seleccion_display), visible_rows=15)
     st.download_button(
-        "⬇️ Descargar Selección de Hoy",
+        "️ Descargar Selección de Hoy",
         data=excel_bytes_single(_prep_export(seleccion), "HonorariosPagoHoy"),
         file_name="honorarios_pago_hoy.xlsx",
         disabled=seleccion.empty,
@@ -1958,7 +1883,7 @@ with tab_seleccion:
 # 6) Reporte PDF
 # =========================================================
 st.subheader("6) Reporte PDF")
-if st.button("📄 Generar PDF Honorarios"):
+if st.button(" Generar PDF Honorarios"):
     pagos_criticos_pdf = pd.DataFrame()
     if isinstance(seleccion, pd.DataFrame) and not seleccion.empty:
         pagos_criticos_pdf = seleccion.rename(columns={"importe_deuda": "importe_deuda"}).copy()
@@ -1974,6 +1899,7 @@ if st.button("📄 Generar PDF Honorarios"):
         filtros=None,
         presupuesto_monto=st.session_state.get(_LOCAL_AMOUNT_KEY),
         seleccion_hoy_df=seleccion,
+        honorarios=True,
     )
 
     st.download_button(
@@ -1982,3 +1908,8 @@ if st.button("📄 Generar PDF Honorarios"):
         file_name=f"Informe_Honorarios_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
         mime="application/pdf",
     )
+
+
+
+
+

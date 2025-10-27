@@ -1,260 +1,377 @@
-# 30_Forecast.py — Forecast con IC, métricas y explicación en General/CE/No CE.
-# Mantiene estilo previo. Descargas en Excel. Gráficos con IC y marcadores.
+from __future__ import annotations
 
-import html
-import streamlit as st
-import streamlit.components.v1 as components
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
 import warnings
-from math import ceil, sqrt
-from sklearn.linear_model import LinearRegression
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from statsmodels.tools.sm_exceptions import ConvergenceWarning
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
 from scipy.stats import norm
-from streamlit.components.v1 import html as components_html
+from statsmodels.tools.sm_exceptions import ConvergenceWarning
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
 from lib_common import (
-    get_df_norm, general_date_filters_ui, apply_general_filters,
-    advanced_filters_ui, apply_advanced_filters, header_ui, money, one_decimal,
-    style_table, sanitize_df, safe_markdown, collapse_sidebar_immediately,
+    get_df_norm,
+    get_honorarios_df,
+    header_ui,
+    general_date_filters_ui,
+    advanced_filters_ui,
+    apply_general_filters,
+    apply_advanced_filters,
+    money,
+    style_table,
+    safe_markdown,
 )
 from lib_report import excel_bytes_single
 
 
-TABLE_BORDER_COLOR = "#d9e1ff"
-TABLE_STRIPED_BG = "#f2f5ff"
-TABLE_HOVER_BG = "#e0e8ff"
-
-
-# ------------------------ utilidades ------------------------ #
-def _agg_paid_series_like_general(df: pd.DataFrame, freq_alias: str) -> pd.DataFrame:
-    """Serie de pagos (pagadas) agregada por fecha de pago y monto_autorizado>0."""
-    if df.empty:
-        return pd.DataFrame(columns=["fecha_g", "y"])
-    d = df.copy()
-    d = d[d["estado_pago"] == "pagada"]
-    if d.empty:
-        return pd.DataFrame(columns=["fecha_g", "y"])
-
-    d["fecha_pagado"] = pd.to_datetime(d.get("fecha_pagado"), errors="coerce")
-    d["monto_autorizado"] = pd.to_numeric(d.get("monto_autorizado"), errors="coerce").fillna(0.0)
-    d = d[(d["fecha_pagado"].notna()) & (d["monto_autorizado"] > 0)]
-    if d.empty:
-        return pd.DataFrame(columns=["fecha_g", "y"])
-
-    if freq_alias == "MS":
-        d["fecha_g"] = d["fecha_pagado"].dt.to_period("M").dt.to_timestamp()
-    elif freq_alias.startswith("W-"):
-        d["fecha_g"] = d["fecha_pagado"].dt.to_period("W").dt.start_time
-    else:
-        d["fecha_g"] = d["fecha_pagado"].dt.to_period("D").dt.to_timestamp()
-
-    ts = (
-        d.groupby("fecha_g")["monto_autorizado"].sum()
-         .sort_index()
-         .asfreq(freq_alias, fill_value=0.0)
-    )
-    return ts.reset_index().rename(columns={"monto_autorizado": "y"})
-
-
-def _ci_from_residuals(y_true: np.ndarray, yhat_in: np.ndarray, yhat_out: np.ndarray, z: float, clip_zero: bool):
-    """IC usando desviación estándar de residuos in-sample."""
-    y_true = np.asarray(y_true, float)
-    yhat_in = np.asarray(yhat_in, float)
-    yhat_out = np.asarray(yhat_out, float)
-    resid = y_true - yhat_in
-    sigma = np.nanstd(resid)
-    low = yhat_out - z * sigma
-    high = yhat_out + z * sigma
-    if clip_zero:
-        low = np.maximum(low, 0.0)
-    return low, high, sigma
-
-
 def _excel_download(df: pd.DataFrame, sheet: str, name: str):
     return st.download_button(
-        f"⬇️ Descargar Excel — {sheet}",
-        data=excel_bytes_single(df, sheet),
+        label=f"Descargar Excel - {sheet}",
+        data=excel_bytes_single(df, sheet_name=sheet),
         file_name=name,
-        disabled=df.empty
+        disabled=df.empty,
     )
 
 
-def _metrics(y_true, y_hat):
-    y_true = np.asarray(y_true, float)
-    y_hat = np.asarray(y_hat, float)
-    mae = np.mean(np.abs(y_true - y_hat))
-    rmse = sqrt(np.mean((y_true - y_hat) ** 2))
-    mask = y_true > 0
-    mape = np.nan
-    if mask.sum() > 0:
-        mape = np.mean(np.abs((y_true[mask] - y_hat[mask]) / y_true[mask])) * 100.0
-    return mae, rmse, mape
+def _build_facturas_base(df_in: pd.DataFrame) -> pd.DataFrame:
+    if df_in is None or df_in.empty:
+        return pd.DataFrame(columns=["fecha_pagado", "monto_autorizado", "cuenta_especial"])
+    d = df_in.copy()
+    d["fecha_pagado"] = pd.to_datetime(d.get("fecha_pagado"), errors="coerce")
+    d["monto_autorizado"] = pd.to_numeric(d.get("monto_autorizado"), errors="coerce").fillna(0.0)
+    if "cuenta_especial" not in d.columns:
+        d["cuenta_especial"] = False
+    d = d[(d["fecha_pagado"].notna()) & (d["monto_autorizado"] > 0)]
+    return d[["fecha_pagado", "monto_autorizado", "cuenta_especial"]].copy()
 
 
-def _metrics_explainer_block(title: str, thr_exc: int, thr_good: int, thr_ok: int):
-    """Bloque didáctico con fórmulas (latex), lectura del IC y guía dinámica por umbrales."""
-    st.markdown(f"### ℹ️ Explicación de métricas — {title}")
-
-    # Promedio histórico
-    st.markdown("**Promedio histórico**")
-    st.latex(r"\overline{H}=\frac{\sum_{t=1}^{n}\text{monto}_t}{n}")
-    st.markdown("Base para comparar el nivel esperado de pagos.")
-
-    # Variación %
-    st.markdown("**Variación % Forecast vs Promedio**")
-    st.latex(r"\%\Delta=\left(\frac{\overline{F}}{\overline{H}}-1\right)\times 100")
-    st.markdown("donde ")
-    st.latex(r"\overline{F}\ \text{es el promedio del forecast en el horizonte.}")
-    st.markdown("• > 0%: pagar más que el histórico &nbsp;&nbsp;• < 0%: pagar menos.")
-
-    # MAE / RMSE / MAPE con fórmulas
-    st.markdown("**MAE** (error absoluto medio, en $):")
-    st.latex(r"\mathrm{MAE}=\frac{1}{n}\sum_{t=1}^{n}\left|y_t-\hat{y}_t\right|")
-
-    st.markdown("**RMSE** (raíz del error cuadrático medio, en $): penaliza más los errores grandes.")
-    st.latex(r"\mathrm{RMSE}=\sqrt{\frac{1}{n}\sum_{t=1}^{n}\left(y_t-\hat{y}_t\right)^2}")
-
-    st.markdown("**MAPE** (error porcentual medio, solo con valores reales > 0):")
-    st.latex(r"\mathrm{MAPE}=\frac{100}{n}\sum_{t=1}^{n}\left|\frac{y_t-\hat{y}_t}{y_t}\right|\quad\text{con }y_t>0")
-
-    # Guía por umbrales dinámicos
-    st.markdown(
-        f"**Guía**: ≤ **{thr_exc}%** Excelente, ≤ **{thr_good}%** Bueno, "
-        f"≤ **{thr_ok}%** Aceptable, > **{thr_ok}%** Débil."
-    )
-
-    # Recomendación operativa basada en IC
-    st.markdown("**Recomendación operativa (usando el IC):**")
-    st.markdown(
-        "- En las tablas aparece **IC Bajo** y **IC Alto**. Interprétalo como un rango donde es **probable** "
-        "que caiga el pago real."
-    )
-    st.markdown("- Para decidir un **monto de pago** por período puedes usar:")
-    st.markdown("  - **Conservador:** *IC Bajo* (minimiza riesgo de sobre-pago).")
-    st.markdown("  - **Base/Esperado:** *Forecast* (punto central del modelo).")
-    st.markdown("  - **Prudente:** promedio del intervalo de confianza (si la variabilidad es alta):")
-    st.latex(r"\text{Monto prudente}=\frac{\mathrm{IC\ Bajo}+\mathrm{IC\ Alto}}{2}")
-
-    st.markdown(
-        "- Si el **IC es muy ancho** o el **MAPE** es alto, segmenta por **CE/No CE**, revisa estacionalidad "
-        "o cambia/ajusta el modelo."
-    )
-
-
-# ------------------------ componentes de UI ------------------------ #
-def _render_metric_cards(cards: list[dict[str, str]]):
-    if not cards:
-        return
-    pieces: list[str] = []
-    for card in cards:
-        label = html.escape(card.get("label", ""))
-        value = html.escape(card.get("value", ""))
-        foot = card.get("foot")
-        foot_is_html = card.get("foot_is_html", False)
-        if foot:
-            foot_html = foot if foot_is_html else html.escape(foot)
-            foot_block = f"<p class='forecast-card__foot'>{foot_html}</p>"
-        else:
-            foot_block = ""
-        card_html = (
-            "<div class=\"forecast-card\">"
-            f"<span class=\"forecast-card__label\">{label}</span>"
-            f"<span class=\"forecast-card__value\">{value}</span>"
-            f"{foot_block}"
-            "</div>"
+def _build_honorarios_base() -> pd.DataFrame:
+    d0 = get_honorarios_df()
+    if d0 is None or getattr(d0, "empty", True):
+        return pd.DataFrame(columns=["fecha_pagado", "monto_autorizado", "cuenta_especial"])
+    d = d0.copy()
+    if "estado_cuota" in d.columns:
+        d = d[d["estado_cuota"].astype(str) == "PAGADA"]
+    if "fecha_ce" in d.columns:
+        d["fecha_pagado"] = pd.to_datetime(d["fecha_ce"], errors="coerce")
+    else:
+        d["fecha_pagado"] = pd.to_datetime(d.get("fecha_pagado"), errors="coerce")
+    amt = pd.Series(np.nan, index=d.index, dtype=float)
+    for col in ("monto_cuota", "monto_pagado", "liquido_cuota", "monto_autorizado", "fac_monto_total"):
+        if col in d.columns:
+            cand = pd.to_numeric(d[col], errors="coerce")
+            amt = amt.fillna(cand)
+    d["monto_autorizado"] = amt.fillna(0.0)
+    if "cuenta_especial" in d.columns:
+        ce = d["cuenta_especial"].fillna(False).astype(bool)
+    else:
+        ce = (
+            (d.get("banco").notna() if "banco" in d.columns else False)
+            | (d.get("cuenta_corriente").notna() if "cuenta_corriente" in d.columns else False)
         )
-        pieces.append(card_html)
-    safe_markdown("<div class='forecast-card-grid'>" + "".join(pieces) + "</div>")
+    d["cuenta_especial"] = ce
+    d = d[(d["fecha_pagado"].notna()) & (d["monto_autorizado"] > 0)]
+    return d[["fecha_pagado", "monto_autorizado", "cuenta_especial"]].copy()
 
 
-def _mape_status(mape_val: float, thr_exc: int, thr_good: int, thr_ok: int):
-    if np.isnan(mape_val):
-        return "neutral", "MAPE no disponible"
-    if mape_val <= thr_exc:
-        return "success", f"Excelente · ≤ {thr_exc}%"
-    if mape_val <= thr_good:
-        return "info", f"Bueno · ≤ {thr_good}%"
-    if mape_val <= thr_ok:
-        return "warning", f"Aceptable · ≤ {thr_ok}%"
-    return "danger", f"Débil · > {thr_ok}%"
+def _aggregate(df: pd.DataFrame, gran: str):
+    if gran == "Mes":
+        df["fecha_g"] = pd.to_datetime(df["fecha_pagado"]).dt.to_period("M").dt.to_timestamp()
+        freq = "MS"
+    elif gran == "Semana":
+        df["fecha_g"] = pd.to_datetime(df["fecha_pagado"]).dt.to_period("W").dt.start_time
+        freq = "W-MON"
+    else:
+        df["fecha_g"] = pd.to_datetime(df["fecha_pagado"]).dt.to_period("D").dt.to_timestamp()
+        freq = "D"
+    ser = df.groupby("fecha_g")["monto_autorizado"].sum().sort_index().asfreq(freq, fill_value=0.0)
+    return ser, freq
 
 
-def _mape_card(mape_val: float, thr_exc: int, thr_good: int, thr_ok: int) -> dict[str, str]:
-    variant, message = _mape_status(mape_val, thr_exc, thr_good, thr_ok)
-    if np.isnan(mape_val):
-        return {
-            "label": "MAPE",
-            "value": "N/A",
-            "foot": "Requiere valores reales positivos para calcularse.",
-        }
-    badge = (
-        f"<span class='forecast-chip forecast-chip--{variant}'>{html.escape(message)}</span>"
-        "<span class='forecast-foot-note'>Precisión in-sample</span>"
+def _fit_hw(ts: pd.Series, steps: int, seasonal_periods: int, damped: bool):
+    sp = max(2, int(seasonal_periods)) if seasonal_periods else None
+    use_seasonal = sp is not None and sp >= 2 and len(ts) >= max(4, (sp or 2) + 1)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=ConvergenceWarning)
+            if use_seasonal:
+                model = ExponentialSmoothing(
+                    ts, trend="add", seasonal="add", seasonal_periods=sp,
+                    damped_trend=bool(damped), initialization_method="estimated"
+                )
+            else:
+                model = ExponentialSmoothing(
+                    ts, trend="add", seasonal=None,
+                    damped_trend=bool(damped), initialization_method="estimated"
+                )
+            fit = model.fit(optimized=True)
+            fc = fit.forecast(steps)
+            fitted_vals = fit.fittedvalues
+            common_idx = fitted_vals.index.intersection(ts.index)
+            resid = (ts.loc[common_idx] - fitted_vals.loc[common_idx]).astype(float)
+            sigma = float(np.nanstd(resid.values, ddof=1)) if len(resid) > 2 else 0.0
+            return fc, fit, sigma
+    except Exception:
+        pass
+    last = float(ts.iloc[-1]) if len(ts) else 0.0
+    idx = pd.date_range(start=ts.index[-1], periods=steps + 1, freq=ts.index.freq)[1:] if len(ts) else pd.Index([])
+    fc = pd.Series([last] * steps, index=idx)
+    sigma = float(np.nanstd(ts.values, ddof=1)) if len(ts) > 2 else 0.0
+    return fc, None, sigma
+
+
+def _ci_from_fc(fc: pd.Series, sigma: float, alpha: float):
+    z = float(norm.ppf(0.5 + alpha / 2.0))
+    low = fc - z * sigma
+    high = fc + z * sigma
+    return low, high
+
+
+def _mape_label(actual: pd.Series, fitted: pd.Series):
+    try:
+        a = pd.to_numeric(pd.Series(actual), errors="coerce")
+        f = pd.to_numeric(pd.Series(fitted), errors="coerce")
+        if isinstance(actual, pd.Series) and isinstance(fitted, pd.Series):
+            idx = a.index.intersection(f.index)
+            a = a.loc[idx]
+            f = f.loc[idx]
+        mask = a.notna() & f.notna() & (a > 0)
+        if mask.sum() == 0:
+            return None, "-"
+        mape = float((np.abs(a[mask] - f[mask]) / a[mask]).mean() * 100.0)
+        if mape <= 10:
+            label = "Excelente"
+        elif mape <= 20:
+            label = "Bueno"
+        elif mape <= 30:
+            label = "Aceptable"
+        else:
+            label = "Mejorar"
+        return mape, label
+    except Exception:
+        return None, "-"
+
+
+def _period_label(gran: str) -> str:
+    return "mes" if gran == "Mes" else ("semana" if gran == "Semana" else "dia")
+
+
+HIST_COLOR = "#1f77b4"
+FC_COLOR = "#ff7f0e"
+IC_FILL = "rgba(255,127,14,0.14)"
+IC_LINE = "rgba(255,127,14,0.55)"
+
+
+def _format_hover_y():
+    return "$%{y:,.0f}"
+
+
+def _build_fig(
+    ts: pd.Series,
+    fc: pd.Series,
+    low: pd.Series,
+    high: pd.Series,
+    title: str,
+    *,
+    rec_y: float | None = None,
+    rec_enfoque: str | None = None,
+) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=ts.index,
+            y=ts.values,
+            name="Historico",
+            mode="lines+markers",
+            line=dict(color=HIST_COLOR, width=2.5),
+            marker=dict(size=5, color=HIST_COLOR, line=dict(width=0)),
+            hovertemplate="Periodo=%{x|%Y-%m-%d}<br>Monto=" + _format_hover_y() + "<extra></extra>",
+        )
     )
-    return {
-        "label": "MAPE",
-        "value": f"{one_decimal(mape_val)}%",
-        "foot": badge,
-        "foot_is_html": True,
-    }
+    fig.add_trace(
+        go.Scatter(
+            x=fc.index,
+            y=fc.values,
+            name="Forecast",
+            mode="lines+markers",
+            line=dict(color=FC_COLOR, width=2.5, dash="dash"),
+            marker=dict(size=6, color=FC_COLOR, line=dict(width=0)),
+            hovertemplate="Periodo=%{x|%Y-%m-%d}<br>Forecast=" + _format_hover_y() + "<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=list(fc.index) + list(fc.index[::-1]),
+            y=list(high.values) + list(low.values[::-1]),
+            fill="toself",
+            fillcolor=IC_FILL,
+            line=dict(color="rgba(0,0,0,0)"),
+            hoverinfo="skip",
+            name="IC",
+            showlegend=True,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=fc.index,
+            y=high.values,
+            name="IC Superior",
+            mode="lines",
+            line=dict(color=IC_LINE, width=1.5, dash="dot"),
+            hovertemplate="Periodo=%{x|%Y-%m-%d}<br>IC Superior=" + _format_hover_y() + "<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=fc.index,
+            y=low.values,
+            name="IC Inferior",
+            mode="lines",
+            line=dict(color=IC_LINE, width=1.5, dash="dot"),
+            hovertemplate="Periodo=%{x|%Y-%m-%d}<br>IC Inferior=" + _format_hover_y() + "<extra></extra>",
+        )
+    )
+    try:
+        if rec_y is not None and len(fc) > 0:
+            rec_x = fc.index[0]
+            low0 = float(low.iloc[0]) if len(low) > 0 else None
+            high0 = float(high.iloc[0]) if len(high) > 0 else None
+            ic_txt = ""
+            if low0 is not None and high0 is not None:
+                ic_txt = f"<br>IC: {money(low0)} a {money(high0)}"
+            fig.add_trace(
+                go.Scatter(
+                    x=[rec_x],
+                    y=[rec_y],
+                    name="Forecast proximo periodo",
+                    mode="markers",
+                    marker=dict(size=12, color="#2ecc71", symbol="star"),
+                    hovertemplate="Forecast proximo periodo=" + _format_hover_y() + "<extra></extra>",
+                    showlegend=True,
+                )
+            )
+            fig.add_annotation(
+                x=rec_x,
+                y=rec_y,
+                text=(
+                    (f"Forecast proximo periodo: {money(float(rec_y))}" + (f" ({rec_enfoque})" if rec_enfoque else ""))
+                    + ic_txt
+                ),
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1,
+                arrowwidth=1.2,
+                arrowcolor="#2ecc71",
+                bgcolor="rgba(46,204,113,0.12)",
+                bordercolor="#2ecc71",
+                borderwidth=1,
+                font=dict(size=11, color="#1f2a55"),
+                ay=-40,
+            )
+    except Exception:
+        pass
+
+    fig.update_layout(
+        title=title,
+        template="plotly_white",
+        legend_orientation="h",
+        legend_yanchor="bottom",
+        legend_y=1.02,
+        legend_x=0.01,
+        margin=dict(l=10, r=10, t=40, b=10),
+    )
+    fig.update_xaxes(
+        showline=True,
+        linewidth=1.5,
+        linecolor="#1f2a55",
+        mirror=True,
+        showgrid=True,
+        gridcolor="rgba(200,200,200,0.35)",
+        ticks="outside",
+        ticklen=6,
+        tickcolor="#1f2a55",
+        title_text="Periodo",
+        title_font=dict(size=12, color="#1f2a55"),
+    )
+    fig.update_yaxes(
+        showline=True,
+        linewidth=1.5,
+        linecolor="#1f2a55",
+        mirror=True,
+        showgrid=True,
+        gridcolor="rgba(200,200,200,0.35)",
+        zeroline=False,
+        ticks="outside",
+        ticklen=6,
+        tickcolor="#1f2a55",
+        title_text="Monto",
+        title_font=dict(size=12, color="#1f2a55"),
+        tickprefix="$",
+    )
+    return fig
 
 
-def _forecast_table_style(df_in: pd.DataFrame) -> pd.io.formats.style.Styler:
-    sty = df_in.style.hide(axis="index")
-    sty = sty.set_table_styles([
-        {"selector": "thead tr", "props": [
-            ("background-color", "var(--app-primary)"),
-            ("color", "var(--app-table-header-fg)"),
-            ("text-transform", "uppercase"),
-            ("letter-spacing", "0.6px"),
-            ("font-weight", "600"),
-            ("font-size", "var(--app-table-font-size)"),
-        ]},
-        {"selector": "th", "props": [
-            ("background-color", "transparent"),
-            ("color", "var(--app-table-header-fg)"),
-            ("padding", "12px 16px"),
-        ]},
-        {"selector": "tbody td", "props": [
-            ("font-size", "var(--app-table-font-size)"),
-            ("padding", "12px 16px"),
-            ("border-bottom", f"1px solid {TABLE_BORDER_COLOR}"),
-            ("color", "var(--app-table-body-fg)"),
-        ]},
-        {"selector": "tbody tr:nth-child(even)", "props": [
-            ("background-color", TABLE_STRIPED_BG),
-        ]},
-        {"selector": "tbody tr:hover", "props": [
-            ("background-color", TABLE_HOVER_BG),
-        ]},
-    ], overwrite=False)
-    if df_in.shape[1] > 1:
-        first_col = df_in.columns[0]
-        sty = sty.set_properties(subset=[first_col], **{"text-align": "left", "font-weight": "600"})
+def _table_style(df_in: pd.DataFrame):
+    sty = df_in.style
+    try:
+        sty = sty.hide(axis="index")
+    except Exception:
+        try:
+            sty = sty.hide_index()
+        except Exception:
+            pass
+    try:
+        sty = sty.set_properties(subset=[df_in.columns[0]], **{"text-align": "left", "font-weight": "600"})
         if df_in.shape[1] > 1:
             sty = sty.set_properties(subset=df_in.columns[1:], **{"text-align": "right"})
+    except Exception:
+        pass
     return sty
 
 
-def _render_note(text: str):
-    safe_markdown(f"<p class='forecast-note'>{html.escape(text)}</p>")
+def _metric_card(title: str, value: str, caption: str | None = None, *, cls: str = "") -> str:
+    cap_html = f'<p class="app-card__subtitle">{caption}</p>' if caption else ""
+    classes = "app-card" + (f" {cls}" if cls else "")
+    return (
+        f'<div class="{classes}">'
+        f'<div class="app-card__title">{title}</div>'
+        f'<div class="app-card__value">{value}</div>'
+        f'{cap_html}'
+        '</div>'
+    )
 
 
-# ------------------------ cabecera y filtros ------------------------ #
-st.set_page_config(
-    page_title="Forecast",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+def _advisor_card(gran: str, fc: pd.Series, low: pd.Series, high: pd.Series, mape: float | None, mape_lbl: str | None) -> str:
+    period = _period_label(gran)
+    try:
+        fc_next = float(fc.iloc[0]) if len(fc) else 0.0
+        low_next = float(low.iloc[0]) if len(low) else 0.0
+        high_next = float(high.iloc[0]) if len(high) else 0.0
+    except Exception:
+        fc_next = low_next = high_next = 0.0
+
+    calidad_txt = f"Calidad: {mape_lbl} ({mape:.1f}%)" if mape is not None else "Calidad: -"
+    caption = (
+        f"Forecast: {money(fc_next)}"
+        f"<br>Conservador: {money(low_next)} (IC minimo)"
+        f"<br>Agresivo: {money(high_next)} (IC maximo)"
+        f"<br>{calidad_txt}"
+        f"<br>Enfoque: Forecast"
+        f"<br><span class=\"app-card__subtitle--muted\">Regla: Forecast como base; Conservador = IC minimo; Agresivo = IC maximo.</span>"
+    )
+    return _metric_card(f"Forecast proximo {_period_label(gran)}", money(fc_next), caption, cls="app-card--advice app-card--wide")
+
+
+# Page config
+st.set_page_config(page_title="Forecast", layout="wide", initial_sidebar_state="collapsed")
 header_ui(
     title="Laboratorio de Forecast de Pagos",
     current_page="Forecast",
-    subtitle="Proyecciones sobre facturas pagadas (monto_autorizado en fecha_pagado)",
+    subtitle="Proyecciones sobre pagos (monto_autorizado en fecha_pagado)",
     nav_active="forecast",
 )
+
 
 df0 = get_df_norm()
 if df0 is None:
@@ -262,507 +379,220 @@ if df0 is None:
     st.stop()
 
 fac_ini, fac_fin, pay_ini, pay_fin = general_date_filters_ui(df0)
-
-st.subheader("1. Filtros del Escenario (Locales a Forecast)")
+st.subheader("1. Filtros del Escenario")
 sede, org, prov, cc, oc, est, prio = advanced_filters_ui(
-    df0,
-    show_controls=['sede', 'prov', 'cc', 'oc', 'prio'],
-    labels={"oc": "Con OC"},
-    helps={"oc": "Filtra por presencia de Orden de Compra (valor > 0)."}
+    df0, show_controls=["sede", "prov", "cc", "oc"], labels={"oc": "Con OC"}
 )
 
 df_filtrado = apply_general_filters(df0, fac_ini, fac_fin, pay_ini, pay_fin)
 df_filtrado = apply_advanced_filters(df_filtrado, sede, [], prov, cc, oc, [], prio)
 
-df = df_filtrado[df_filtrado["estado_pago"] == "pagada"].copy()
-if df.empty or "fecha_pagado" not in df.columns or df["fecha_pagado"].isna().all():
+fuente = st.radio("Fuente de datos", ["Facturas", "Honorarios", "Ambos"], horizontal=True, index=0)
+
+df_fac_base = _build_facturas_base(df_filtrado)
+df_hon_base = _build_honorarios_base()
+if fuente == "Facturas":
+    df_base = df_fac_base
+elif fuente == "Honorarios":
+    df_base = df_hon_base
+else:
+    df_base = pd.concat([df_fac_base, df_hon_base], ignore_index=True)
+
+if df_base.empty:
     st.info("No hay datos de pagos con los filtros seleccionados.")
     st.stop()
 
-df["fecha_pagado"] = pd.to_datetime(df["fecha_pagado"])
-df["importe"] = pd.to_numeric(df["monto_autorizado"], errors="coerce").fillna(0.0)
-
-# ------------------------ parámetros del modelo ------------------------ #
-st.subheader("2. Parámetros del Modelo")
+# Model params
+st.subheader("2. Parametros del Modelo")
 c1, c2, c3 = st.columns(3)
-modelo_sel = c1.selectbox("Modelo", ["Proyección de Media Móvil", "Regresión Lineal", "Holt-Winters (Aditivo)"])
-gran = c2.selectbox("Granularidad", ["Mes", "Semana", "Día"])
+c1.markdown("Modelo: Holt-Winters (aditivo)")
+gran = c2.selectbox("Granularidad", ["Mes", "Semana", "Dia"], index=0)
 n_steps = c3.slider("Horizonte a Proyectar", 1, 36, 6, 1)
 
 h1, h2, h3 = st.columns(3)
-seasonal_periods_ui = h1.slider("Períodos Estacionales", 1, 36, 12, 1)
-damped_trend = h2.checkbox("Tendencia amortiguada (damped)", value=False)
-alpha_ci = h3.slider("Confianza (α)", 0.80, 0.99, 0.95, 0.01)
+seasonal_ui = h1.slider("Periodos estacionales", 1, 36, 12, 1)
+prev_src = st.session_state.get("_last_fuente_for_damped")
+if fuente != prev_src:
+    if fuente == "Ambos":
+        st.session_state["damped_trend_flag"] = True
+    st.session_state["_last_fuente_for_damped"] = fuente
+damped_trend = h2.checkbox("Tendencia amortiguada (damped)", value=bool(st.session_state.get("damped_trend_flag", fuente == "Ambos")), key="damped_trend_flag")
+alpha_ci = h3.slider("Confianza", 0.80, 0.99, 0.95, 0.01)
 
-st.subheader("2.1 Alertas y Reglas")
-a1, a2, a3, a4 = st.columns(4)
-thr_exc = a1.slider("MAPE Excelente ≤", 5, 20, 10, 1)
-thr_good = a2.slider("MAPE Bueno ≤", 10, 30, 20, 1)
-thr_ok   = a3.slider("MAPE Aceptable ≤", 20, 50, 30, 1)
-clip_ci  = a4.checkbox("Recortar IC inferior < 0 a 0", value=True)
-clip_fc  = st.checkbox("Evitar forecast negativo (≥ 0)", value=True)
+clip_ci0 = st.checkbox("Recortar IC inferior < 0 a 0", value=True)
+clip_fc0 = st.checkbox("Evitar forecast negativo (>= 0)", value=True)
 
-# ------------------------ agregación temporal (GENERAL) ------------------------ #
-if gran == "Mes":
-    df["fecha_g"] = df["fecha_pagado"].dt.to_period("M").dt.to_timestamp()
-    freq = "MS"
-elif gran == "Semana":
-    df["fecha_g"] = df["fecha_pagado"].dt.to_period("W").dt.start_time
-    freq = "W-MON"
-else:
-    df["fecha_g"] = df["fecha_pagado"].dt.to_period("D").dt.to_timestamp()
-    freq = "D"
+# Aggregate + fit (General)
+ts_all, freq = _aggregate(df_base.copy(), gran)
+max_period = max(2, len(ts_all) // 2)
+seasonal_periods = min(int(seasonal_ui), int(max_period)) if len(ts_all) >= 2 else 2
+fc_all, fit_all, sigma_all = _fit_hw(ts_all, n_steps, seasonal_periods, damped_trend)
+low_all, high_all = _ci_from_fc(fc_all, sigma_all, alpha_ci)
+if clip_ci0:
+    low_all = low_all.clip(lower=0.0)
+if clip_fc0:
+    fc_all = fc_all.clip(lower=0.0)
 
-ts = (
-    df.groupby("fecha_g")["importe"].sum()
-      .sort_index().asfreq(freq, fill_value=0.0)
-      .reset_index()
+# Metrics
+mape_all, mape_lbl_all = (None, "-")
+try:
+    if fit_all is not None:
+        mape_all, mape_lbl_all = _mape_label(ts_all, fit_all.fittedvalues)
+except Exception:
+    pass
+
+rec_global = float(fc_all.iloc[0]) if len(fc_all) else None
+fig_all = _build_fig(
+    ts_all, fc_all, low_all, high_all, title="Proyeccion General",
+    rec_y=rec_global, rec_enfoque="Forecast",
 )
+st.plotly_chart(fig_all, use_container_width=True)
 
-max_period = max(2, len(ts) // 2)
-seasonal_periods = min(seasonal_periods_ui, max_period)
-z = float(norm.ppf(0.5 + alpha_ci / 2.0))
+# Table (General)
+def _tick_fmt(gran):
+    return "%Y-%m" if gran == "Mes" else ("%Y-%m-%d")
 
-last_date = ts["fecha_g"].iloc[-1]
-future_idx = pd.date_range(start=last_date, periods=n_steps + 1, freq=freq)[1:]
+tick_format = _tick_fmt(gran)
+tbl_all = pd.DataFrame({
+    "Periodo": pd.to_datetime(fc_all.index).to_series().dt.strftime(tick_format).values,
+    "Forecast": [money(v) for v in fc_all.values],
+    "IC Inferior": [money(v) for v in low_all.values],
+    "IC Superior": [money(v) for v in high_all.values],
+})
+display_tbl_all = tbl_all.copy()
+if mape_all is not None:
+    resumen_row = pd.DataFrame([
+        {
+            "Periodo": "Resumen (MAPE)",
+            "Forecast": f"{mape_all:.1f}% ({mape_lbl_all})",
+            "IC Inferior": "",
+            "IC Superior": "",
+        }
+    ])
+    display_tbl_all = pd.concat([display_tbl_all, resumen_row], ignore_index=True)
+style_table(_table_style(display_tbl_all), visible_rows=min(15, len(display_tbl_all) + 1))
+_excel_download(tbl_all, sheet="General", name="forecast_general.xlsx")
 
-# ------------------------ modelado (GENERAL) ------------------------ #
-y = ts["importe"].astype(float)
-ts["tendencia"] = np.nan
-fc = pd.DataFrame({"fecha_g": future_idx, "forecast": np.nan})
-ci_low = ci_high = None
+# Indicadores
+hist_total = float(ts_all.sum()) if len(ts_all) else 0.0
+hist_avg_12 = float(ts_all.tail(min(12, len(ts_all))).mean()) if len(ts_all) else 0.0
+sum_fc = float(fc_all.sum())
+sum_low = float(low_all.sum())
+sum_high = float(high_all.sum())
+
+cards = []
+cards.append(_metric_card("Historico total", money(hist_total)))
+cards.append(_metric_card("Promedio ultimos 12", money(hist_avg_12)))
+cards.append(_metric_card("Horizonte acumulado", money(sum_fc)))
+cards.append(_metric_card("IC rango (inferior-superior)", f"{money(sum_low)} a {money(sum_high)}"))
+_mape_value_txt = f"{mape_all:.1f}%" if mape_all is not None else "-"
+_mape_caption = ""
+if mape_all is not None:
+    _mape_caption = (
+        f"Calidad: {mape_lbl_all}<br>"
+        "<span class=\"app-card__subtitle--muted\">"
+        "MAPE: error absoluto promedio del pronostico vs real; menor es mejor. "
+        "Ej: 10% \u2248 el pronostico se desvia ~10% del real."
+        "</span>"
+    )
+cards.append(_metric_card("MAPE", _mape_value_txt, caption=_mape_caption))
+cards.append(_advisor_card(gran, fc_all, low_all, high_all, mape_all, mape_lbl_all))
+safe_markdown('<div class="app-card-grid">' + "".join(cards) + '</div>')
+
+# Historico (ultimos 12)
+with st.expander("Tabla historico (ultimos 12)"):
+    if fuente == "Ambos":
+        ts_fac, _ = _aggregate(df_fac_base.copy(), gran) if isinstance(df_fac_base, pd.DataFrame) else (pd.Series(dtype=float), None)
+        ts_hon, _ = _aggregate(df_hon_base.copy(), gran) if isinstance(df_hon_base, pd.DataFrame) else (pd.Series(dtype=float), None)
+        base_idx = ts_all.index
+        fac_align = ts_fac.reindex(base_idx, fill_value=0.0) if len(ts_fac) else pd.Series(0.0, index=base_idx)
+        hon_align = ts_hon.reindex(base_idx, fill_value=0.0) if len(ts_hon) else pd.Series(0.0, index=base_idx)
+        ambos_align = fac_align + hon_align
+        last_n = min(12, len(base_idx))
+        if last_n:
+            idx_tail = base_idx[-last_n:]
+            periodos = pd.to_datetime(idx_tail).to_series().dt.strftime(tick_format).values
+            hist_tbl = pd.DataFrame({
+                "Periodo": periodos,
+                "Real Facturas": [money(v) for v in fac_align.loc[idx_tail].values],
+                "Real Honorarios": [money(v) for v in hon_align.loc[idx_tail].values],
+                "Real Ambos": [money(v) for v in ambos_align.loc[idx_tail].values],
+            })
+            style_table(_table_style(hist_tbl), visible_rows=min(last_n, len(hist_tbl) + 1))
+            _excel_download(hist_tbl, sheet="Historico", name="historico_ultimos12.xlsx")
+    else:
+        last_n = min(12, len(ts_all))
+        if last_n:
+            hist_tbl = pd.DataFrame({
+                "Periodo": pd.to_datetime(ts_all.tail(last_n).index).to_series().dt.strftime(tick_format).values,
+                "Real": [money(v) for v in ts_all.tail(last_n).values],
+            })
+            style_table(_table_style(hist_tbl), visible_rows=min(last_n, len(hist_tbl) + 1))
+            _excel_download(hist_tbl, sheet="Historico", name="historico_ultimos12.xlsx")
 
 
-def _ci_bounds(series_fitted: pd.Series, fc_values: np.ndarray, zval: float):
-    resid = series_fitted.dropna()
-    if resid.empty:
-        return None, None
-    sigma = np.std(resid)
-    lower = fc_values - zval * sigma
-    upper = fc_values + zval * sigma
-    return lower, upper
+st.markdown("---")
+st.subheader("3. Desglose por Cuenta Especial")
 
 
-if modelo_sel == "Proyección de Media Móvil":
-    ventana = st.slider("Ventana de Media Móvil", 1, max_period, min(12, max_period), 1)
-    ts["tendencia"] = y.rolling(window=ventana, min_periods=1).mean()
-    forecast_value = ts["tendencia"].iloc[-1]
-    fc["forecast"] = forecast_value
-    resid = y - ts["tendencia"]
-    lb, ub = _ci_bounds(resid, fc["forecast"].values, z)
-    ci_low, ci_high = lb, ub
+def _section_ce(df_in: pd.DataFrame, title: str, flag_val: bool):
+    d = df_in[df_in["cuenta_especial"].fillna(False).astype(bool) == flag_val]
+    if d.empty:
+        st.info(f"Sin datos para '{title}'.")
+        return
+    ts, _ = _aggregate(d.copy(), gran)
+    if ts.empty or ts.sum() <= 0:
+        st.info(f"Serie vacia para '{title}'.")
+        return
+    max_p = max(2, len(ts) // 2)
+    sp = min(int(seasonal_ui), int(max_p)) if len(ts) >= 2 else 2
+    fc, fit, sigma = _fit_hw(ts, n_steps, sp, damped_trend)
+    low, high = _ci_from_fc(fc, sigma, alpha_ci)
+    if clip_ci0:
+        low = low.clip(lower=0.0)
+    if clip_fc0:
+        fc = fc.clip(lower=0.0)
 
-elif modelo_sel == "Regresión Lineal":
-    ts["time_index"] = np.arange(len(ts.index))
-    model = LinearRegression().fit(ts[["time_index"]], y)
-    ts["tendencia"] = model.predict(ts[["time_index"]])
-    fut_idx = np.arange(len(ts.index), len(ts.index) + n_steps).reshape(-1, 1)
-    fc["forecast"] = model.predict(fut_idx)
-    resid = y - ts["tendencia"]
-    lb, ub = _ci_bounds(resid, fc["forecast"].values, z)
-    ci_low, ci_high = lb, ub
+    rec_local = float(fc.iloc[0]) if len(fc) else None
+    fig = _build_fig(ts, fc, low, high, title=title, rec_y=rec_local, rec_enfoque="Forecast")
+    st.plotly_chart(fig, use_container_width=True)
 
-else:
+    # Cards (igual esquema que general)
+    hist_total_ce = float(ts.sum()) if len(ts) else 0.0
+    hist_avg12_ce = float(ts.tail(min(12, len(ts))).mean()) if len(ts) else 0.0
+    sum_fc = float(fc.sum())
+    sum_low = float(low.sum())
+    sum_high = float(high.sum())
+    mape_val, mape_lbl = (None, "-")
     try:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=ConvergenceWarning)
-            model = ExponentialSmoothing(
-                y, trend="add", seasonal="add",
-                seasonal_periods=seasonal_periods, damped_trend=damped_trend,
-                initialization_method="estimated"
-            ).fit()
-        ts["tendencia"] = model.fittedvalues
-        fc["forecast"] = model.forecast(n_steps).values
-        resid = y - ts["tendencia"]
-        lb, ub = _ci_bounds(resid, fc["forecast"].values, z)
-        ci_low, ci_high = lb, ub
-    except Exception as e:
-        st.error(f"Error con Holt-Winters (Aditivo): {e}")
-        st.stop()
-
-# ------------------------ visualización (GENERAL) ------------------------ #
-st.subheader("3. Visualización del Pronóstico — **General**")
-
-tick_format = "%b %Y" if gran == "Mes" else ("Sem %W, %Y" if gran == "Semana" else "%d-%m-%Y")
-
-fc_plot = fc.copy()
-ci_low_plot = np.array(ci_low, float).copy() if ci_low is not None else None
-ci_high_plot = np.array(ci_high, float).copy() if ci_high is not None else None
-
-if clip_fc:
-    fc_plot["forecast"] = np.maximum(fc_plot["forecast"], 0.0)
-if clip_ci and (ci_low_plot is not None):
-    ci_low_plot = np.maximum(ci_low_plot, 0.0)
-
-err_plus = err_minus = None
-if (ci_low_plot is not None) and (ci_high_plot is not None):
-    err_plus = np.maximum(ci_high_plot - fc_plot["forecast"].values, 0.0)
-    err_minus = np.maximum(fc_plot["forecast"].values - ci_low_plot, 0.0)
-
-fig = go.Figure()
-fig.add_scatter(x=ts["fecha_g"], y=y, mode="lines", name="Histórico Real")
-fig.add_scatter(x=ts["fecha_g"], y=ts["tendencia"], mode="lines", name="Tendencia (Modelo)", line=dict(dash="dot"))
-fig.add_scatter(
-    x=fc_plot["fecha_g"], y=fc_plot["forecast"], mode="lines+markers", name="Forecast",
-    line=dict(dash="dash"),
-    error_y=dict(
-        type="data",
-        array=err_plus if err_plus is not None else None,
-        arrayminus=err_minus if err_minus is not None else None,
-        visible=True if err_plus is not None else False
-    )
-)
-if (ci_low_plot is not None) and (ci_high_plot is not None):
-    fig.add_scatter(
-        x=list(fc_plot["fecha_g"]) + list(fc_plot["fecha_g"][::-1]),
-        y=list(ci_high_plot) + list(ci_low_plot[::-1]),
-        fill="toself", fillcolor="rgba(0,0,200,0.08)", line=dict(width=0),
-        hoverinfo="skip", name=f"IC {int(alpha_ci*100)}%"
-    )
-fig.update_xaxes(tickformat=tick_format)
-st.plotly_chart(fig, use_container_width=True)
-if clip_fc or clip_ci:
-    _render_note("Se recortó en 0 el forecast o el límite inferior por la naturaleza de los pagos.")
-
-# ------------------------ resumen + explicación (GENERAL) ------------------------ #
-st.subheader("4. Resultados del Forecast — General")
-avg_hist = float(y.mean())
-avg_fc = float(np.mean(fc_plot["forecast"].values))
-var_pct = ((avg_fc - avg_hist) / avg_hist) * 100 if avg_hist > 0 else 0.0
-mae, rmse, mape = _metrics(y_true=y, y_hat=ts["tendencia"].fillna(y).values)
-
-cards_general = [
-    {
-        "label": "Promedio Histórico",
-        "value": money(avg_hist),
-        "foot": "Promedio del monto pagado en el histórico.",
-    },
-    {
-        "label": "Forecast Promedio",
-        "value": money(avg_fc),
-        "foot": "Valor medio proyectado en el horizonte seleccionado.",
-    },
-    {
-        "label": "Variación % Forecast vs Promedio",
-        "value": f"{one_decimal(var_pct)}%",
-        "foot": "Positivo: forecast por encima del histórico.",
-    },
-    {
-        "label": "MAE",
-        "value": money(mae),
-        "foot": "<span class='forecast-foot-note'>Error absoluto medio (histórico).</span>",
-        "foot_is_html": True,
-    },
-    {
-        "label": "RMSE",
-        "value": money(rmse),
-        "foot": "<span class='forecast-foot-note'>Raíz del error cuadrático medio.</span>",
-        "foot_is_html": True,
-    },
-    _mape_card(mape, thr_exc, thr_good, thr_ok),
-]
-
-fc_display = fc_plot.copy()
-fc_display["fecha_g"] = pd.to_datetime(fc_display["fecha_g"])
-fc_display["Período"] = fc_display["fecha_g"].dt.strftime(tick_format)
-display_general = fc_display[["Período", "forecast"]].rename(columns={"forecast": "Valor Estimado"})
-if (ci_low_plot is not None) and (ci_high_plot is not None):
-    display_general["IC Bajo"] = ci_low_plot
-    display_general["IC Alto"] = ci_high_plot
-cols = display_general.columns.tolist()
-
-display_general_fmt = display_general.copy()
-for col in cols[1:]:
-    display_general_fmt[col] = display_general_fmt[col].map(money)
-
-st.markdown("#### Horizonte proyectado (General)")
-display_general_fmt = sanitize_df(display_general_fmt)
-styled_general = _forecast_table_style(display_general_fmt[cols])
-style_table(styled_general)
-export_general = display_general.rename(columns={"Valor Estimado": "Valor_Estimado"})
-if "IC Bajo" in export_general.columns:
-    export_general = export_general.rename(columns={"IC Bajo": "IC_Bajo", "IC Alto": "IC_Alto"})
-_excel_download(export_general, "Forecast_General", "forecast_general.xlsx")
-
-st.markdown("#### Indicadores del Forecast General")
-_render_metric_cards(cards_general)
-
-with st.expander("¿Cómo leer este bloque? (General)"):
-    _metrics_explainer_block("General", thr_exc, thr_good, thr_ok)
-
-# ------------------------ Forecast por Tipo de Cuenta ------------------------ #
-safe_markdown("---")
-st.subheader("5. Forecast por Tipo de Cuenta")
-freq_alias = "MS" if gran == "Mes" else ("W-MON" if gran == "Semana" else "D")
-
-# ====== 5.1 Cuentas Especiales ====== #
-st.markdown("#### 5.1 Cuentas Especiales")
-df_especial = df_filtrado[df_filtrado.get("cuenta_especial", False) == True].copy()
-ts_ce = _agg_paid_series_like_general(df_especial, freq_alias)
-
-if ts_ce.empty or ts_ce["y"].sum() == 0:
-    st.info("Sin pagos suficientes en **Cuentas Especiales**.")
-else:
-    ts_ce = ts_ce.sort_values("fecha_g").set_index("fecha_g")["y"].astype(float)
-    max_period_ce = max(2, len(ts_ce) // 2)
-    seasonal_periods_ce = min(seasonal_periods_ui, max_period_ce)
-    last_date_ce = ts_ce.index[-1]
-    future_idx_ce = pd.date_range(start=last_date_ce, periods=n_steps + 1, freq=freq_alias)[1:]
-
-    # ajuste + forecast + IC
-    if modelo_sel == "Proyección de Media Móvil":
-        w = min(12, max_period_ce)
-        yhat_in_ce = pd.Series(ts_ce).rolling(window=w, min_periods=1).mean().values
-        yhat_out_ce = np.full(n_steps, float(pd.Series(ts_ce).rolling(w, min_periods=1).mean().iloc[-1]))
-    elif modelo_sel == "Regresión Lineal":
-        t = np.arange(len(ts_ce)).reshape(-1, 1)
-        reg = LinearRegression().fit(t, ts_ce.values)
-        yhat_in_ce = reg.predict(t)
-        tf = np.arange(len(ts_ce), len(ts_ce) + n_steps).reshape(-1, 1)
-        yhat_out_ce = reg.predict(tf)
-    else:
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", category=ConvergenceWarning)
-                hw = ExponentialSmoothing(
-                    ts_ce.values, trend="add", seasonal="add",
-                    seasonal_periods=seasonal_periods_ce, damped_trend=damped_trend,
-                    initialization_method="estimated"
-                ).fit()
-            yhat_in_ce = hw.fittedvalues
-            yhat_out_ce = hw.forecast(n_steps)
-        except Exception as e:
-            st.warning(f"Holt-Winters no disponible en CE: {e}")
-            w = min(12, max_period_ce)
-            yhat_in_ce = pd.Series(ts_ce).rolling(window=w, min_periods=1).mean().values
-            yhat_out_ce = np.full(n_steps, float(pd.Series(ts_ce).rolling(w, min_periods=1).mean().iloc[-1]))
-
-    if clip_fc:
-        yhat_out_ce = np.maximum(yhat_out_ce, 0.0)
-
-    ci_low_ce, ci_high_ce, _ = _ci_from_residuals(
-        ts_ce.values, np.nan_to_num(yhat_in_ce, nan=0.0), yhat_out_ce, z, clip_zero=clip_ci
-    )
-
-    err_plus_ce = np.maximum(ci_high_ce - yhat_out_ce, 0.0)
-    err_minus_ce = np.maximum(yhat_out_ce - ci_low_ce, 0.0)
-
-    col_plot, col_tab = st.columns([2, 1])
-    with col_plot:
-        fig_ce = go.Figure()
-        fig_ce.add_scatter(x=ts_ce.index, y=ts_ce.values, mode="lines+markers", name="Pagos reales")
-        fig_ce.add_scatter(
-            x=ts_ce.index, y=np.nan_to_num(yhat_in_ce, nan=0.0), mode="lines",
-            name="Tendencia (Modelo)", line=dict(dash="dot")
-        )
-        fig_ce.add_scatter(
-            x=future_idx_ce, y=yhat_out_ce, mode="lines+markers", name="Forecast",
-            line=dict(dash="dash"),
-            error_y=dict(type="data", array=err_plus_ce, arrayminus=err_minus_ce, visible=True)
-        )
-        fig_ce.add_scatter(
-            x=list(future_idx_ce) + list(future_idx_ce[::-1]),
-            y=list(ci_high_ce) + list(ci_low_ce[::-1]),
-            fill="toself", fillcolor="rgba(0,0,200,0.08)", line=dict(width=0),
-            hoverinfo="skip", name=f"IC {int(alpha_ci*100)}%"
-        )
-        fig_ce.update_xaxes(tickformat=("%b %Y" if gran == "Mes" else ("Sem %W, %Y" if gran == "Semana" else "%d-%m-%Y")))
-        fig_ce.update_layout(margin=dict(l=20, r=20, t=30, b=20), height=420,
-                             legend_orientation="h", legend_y=1.02, legend_x=0)
-        st.plotly_chart(fig_ce, use_container_width=True)
-
-    with col_tab:
-        tb = pd.DataFrame({
-            "Período": pd.to_datetime(future_idx_ce).strftime(
-                "%b %Y" if gran == "Mes" else ("Sem %W, %Y" if gran == "Semana" else "%d-%m-%Y")
-            ),
-            "Valor Estimado": yhat_out_ce,
-            "IC Bajo": ci_low_ce,
-            "IC Alto": ci_high_ce,
-        })
-        tb_display = tb.copy()
-        for col in ["Valor Estimado", "IC Bajo", "IC Alto"]:
-            tb_display[col] = tb_display[col].map(money)
-        tb_display = sanitize_df(tb_display)
-        style_table(_forecast_table_style(tb_display))
-        export_ce = tb.rename(
-            columns={"Valor Estimado": "Valor_Estimado", "IC Bajo": "IC_Bajo", "IC Alto": "IC_Alto"}
-        )
-        _excel_download(export_ce, "Forecast_CE", "forecast_cuentas_especiales.xlsx")
-
-    st.markdown("#### Indicadores del Forecast — Cuentas Especiales")
-    avg_hist_ce = float(ts_ce.mean())
-    avg_fc_ce = float(np.mean(yhat_out_ce))
-    var_pct_ce = ((avg_fc_ce - avg_hist_ce) / avg_hist_ce) * 100 if avg_hist_ce > 0 else 0.0
-    mae_ce, rmse_ce, mape_ce = _metrics(ts_ce.values, np.nan_to_num(yhat_in_ce, nan=ts_ce.values))
-
-    cards_ce = [
-        {
-            "label": "Promedio Histórico",
-            "value": money(avg_hist_ce),
-            "foot": "Nivel medio pagado en el histórico CE.",
-        },
-        {
-            "label": "Forecast Promedio",
-            "value": money(avg_fc_ce),
-            "foot": "Proyección media para Cuentas Especiales.",
-        },
-        {
-            "label": "Variación % vs Prom.",
-            "value": f"{one_decimal(var_pct_ce)}%",
-            "foot": "Impacto porcentual frente al histórico.",
-        },
-        {
-            "label": "MAE",
-            "value": money(mae_ce),
-            "foot": "<span class='forecast-foot-note'>Error absoluto medio (histórico).</span>",
-            "foot_is_html": True,
-        },
-        {
-            "label": "RMSE",
-            "value": money(rmse_ce),
-            "foot": "<span class='forecast-foot-note'>Penaliza errores grandes.</span>",
-            "foot_is_html": True,
-        },
-        _mape_card(mape_ce, thr_exc, thr_good, thr_ok),
+        if fit is not None:
+            mape_val, mape_lbl = _mape_label(ts, fit.fittedvalues)
+    except Exception:
+        pass
+    cards = [
+        _metric_card("Historico total", money(hist_total_ce)),
+        _metric_card("Promedio ultimos 12", money(hist_avg12_ce)),
+        _metric_card("Horizonte acumulado", money(sum_fc)),
+        _metric_card("IC rango (inferior-superior)", f"{money(sum_low)} a {money(sum_high)}"),
+        _metric_card("MAPE", f"{mape_val:.1f}%" if mape_val is not None else "-", caption=(f"Calidad: {mape_lbl}" if mape_val is not None else "")),
+        _advisor_card(gran, fc, low, high, mape_val, mape_lbl),
     ]
-    _render_metric_cards(cards_ce)
+    safe_markdown('<div class="app-card-grid">' + "".join(cards) + '</div>')
 
-    with st.expander("¿Cómo leer este bloque? (Cuentas Especiales)"):
-        _metrics_explainer_block("Cuentas Especiales", thr_exc, thr_good, thr_ok)
+    tbl = pd.DataFrame({
+        "Periodo": pd.to_datetime(fc.index).to_series().dt.strftime(tick_format).values,
+        "Forecast": [money(v) for v in fc.values],
+        "IC Inferior": [money(v) for v in low.values],
+        "IC Superior": [money(v) for v in high.values],
+    })
+    style_table(_table_style(tbl), visible_rows=min(12, len(tbl) + 1))
+    base_name = "forecast_ce.xlsx" if flag_val else "forecast_no_ce.xlsx"
+    sheet_name = "CE" if flag_val else "No CE"
+    _excel_download(tbl, sheet=sheet_name, name=base_name)
 
-# ====== 5.2 Cuentas No Especiales ====== #
-st.markdown("#### 5.2 Cuentas No Especiales")
-df_noesp = df_filtrado[df_filtrado.get("cuenta_especial", False) != True].copy()
-ts_ne = _agg_paid_series_like_general(df_noesp, freq_alias)
 
-if ts_ne.empty or ts_ne["y"].sum() == 0:
-    st.info("Sin pagos suficientes en **Cuentas No Especiales**.")
-else:
-    ts_ne = ts_ne.sort_values("fecha_g").set_index("fecha_g")["y"].astype(float)
-    max_period_ne = max(2, len(ts_ne) // 2)
-    seasonal_periods_ne = min(seasonal_periods_ui, max_period_ne)
-    last_date_ne = ts_ne.index[-1]
-    future_idx_ne = pd.date_range(start=last_date_ne, periods=n_steps + 1, freq=freq_alias)[1:]
-
-    if modelo_sel == "Proyección de Media Móvil":
-        w = min(12, max_period_ne)
-        yhat_in_ne = pd.Series(ts_ne).rolling(window=w, min_periods=1).mean().values
-        yhat_out_ne = np.full(n_steps, float(pd.Series(ts_ne).rolling(w, min_periods=1).mean().iloc[-1]))
-    elif modelo_sel == "Regresión Lineal":
-        t = np.arange(len(ts_ne)).reshape(-1, 1)
-        reg = LinearRegression().fit(t, ts_ne.values)
-        yhat_in_ne = reg.predict(t)
-        tf = np.arange(len(ts_ne), len(ts_ne) + n_steps).reshape(-1, 1)
-        yhat_out_ne = reg.predict(tf)
-    else:
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", category=ConvergenceWarning)
-                hw = ExponentialSmoothing(
-                    ts_ne.values, trend="add", seasonal="add",
-                    seasonal_periods=seasonal_periods_ne, damped_trend=damped_trend,
-                    initialization_method="estimated"
-                ).fit()
-            yhat_in_ne = hw.fittedvalues
-            yhat_out_ne = hw.forecast(n_steps)
-        except Exception as e:
-            st.warning(f"Holt-Winters no disponible en No CE: {e}")
-            w = min(12, max_period_ne)
-            yhat_in_ne = pd.Series(ts_ne).rolling(window=w, min_periods=1).mean().values
-            yhat_out_ne = np.full(n_steps, float(pd.Series(ts_ne).rolling(w, min_periods=1).mean().iloc[-1]))
-
-    if clip_fc:
-        yhat_out_ne = np.maximum(yhat_out_ne, 0.0)
-
-    ci_low_ne, ci_high_ne, _ = _ci_from_residuals(
-        ts_ne.values, np.nan_to_num(yhat_in_ne, nan=0.0), yhat_out_ne, z, clip_zero=clip_ci
-    )
-
-    err_plus_ne = np.maximum(ci_high_ne - yhat_out_ne, 0.0)
-    err_minus_ne = np.maximum(yhat_out_ne - ci_low_ne, 0.0)
-
-    col_plot, col_tab = st.columns([2, 1])
-    with col_plot:
-        fig_ne = go.Figure()
-        fig_ne.add_scatter(x=ts_ne.index, y=ts_ne.values, mode="lines+markers", name="Pagos reales")
-        fig_ne.add_scatter(
-            x=ts_ne.index, y=np.nan_to_num(yhat_in_ne, nan=0.0), mode="lines",
-            name="Tendencia (Modelo)", line=dict(dash="dot")
-        )
-        fig_ne.add_scatter(
-            x=future_idx_ne, y=yhat_out_ne, mode="lines+markers", name="Forecast",
-            line=dict(dash="dash"),
-            error_y=dict(type="data", array=err_plus_ne, arrayminus=err_minus_ne, visible=True)
-        )
-        fig_ne.add_scatter(
-            x=list(future_idx_ne) + list(future_idx_ne[::-1]),
-            y=list(ci_high_ne) + list(ci_low_ne[::-1]),
-            fill="toself", fillcolor="rgba(0,0,200,0.08)", line=dict(width=0),
-            hoverinfo="skip", name=f"IC {int(alpha_ci*100)}%"
-        )
-        fig_ne.update_xaxes(tickformat=("%b %Y" if gran == "Mes" else ("Sem %W, %Y" if gran == "Semana" else "%d-%m-%Y")))
-        fig_ne.update_layout(margin=dict(l=20, r=20, t=30, b=20), height=420,
-                             legend_orientation="h", legend_y=1.02, legend_x=0)
-        st.plotly_chart(fig_ne, use_container_width=True)
-
-    with col_tab:
-        tb = pd.DataFrame({
-            "Período": pd.to_datetime(future_idx_ne).strftime(
-                "%b %Y" if gran == "Mes" else ("Sem %W, %Y" if gran == "Semana" else "%d-%m-%Y")
-            ),
-            "Valor Estimado": yhat_out_ne,
-            "IC Bajo": ci_low_ne,
-            "IC Alto": ci_high_ne,
-        })
-        tb_display = tb.copy()
-        for col in ["Valor Estimado", "IC Bajo", "IC Alto"]:
-            tb_display[col] = tb_display[col].map(money)
-        tb_display = sanitize_df(tb_display)
-        style_table(_forecast_table_style(tb_display))
-        export_ne = tb.rename(
-            columns={"Valor Estimado": "Valor_Estimado", "IC Bajo": "IC_Bajo", "IC Alto": "IC_Alto"}
-        )
-        _excel_download(export_ne, "Forecast_NoCE", "forecast_cuentas_no_especiales.xlsx")
-
-    st.markdown("#### Indicadores del Forecast — Cuentas No Especiales")
-    avg_hist_ne = float(ts_ne.mean())
-    avg_fc_ne = float(np.mean(yhat_out_ne))
-    var_pct_ne = ((avg_fc_ne - avg_hist_ne) / avg_hist_ne) * 100 if avg_hist_ne > 0 else 0.0
-    mae_ne, rmse_ne, mape_ne = _metrics(ts_ne.values, np.nan_to_num(yhat_in_ne, nan=ts_ne.values))
-
-    cards_ne = [
-        {
-            "label": "Promedio Histórico",
-            "value": money(avg_hist_ne),
-            "foot": "Nivel medio pagado en el histórico No CE.",
-        },
-        {
-            "label": "Forecast Promedio",
-            "value": money(avg_fc_ne),
-            "foot": "Proyección media para cuentas No Especiales.",
-        },
-        {
-            "label": "Variación % vs Prom.",
-            "value": f"{one_decimal(var_pct_ne)}%",
-            "foot": "Impacto porcentual frente al histórico.",
-        },
-        {
-            "label": "MAE",
-            "value": money(mae_ne),
-            "foot": "<span class='forecast-foot-note'>Error absoluto medio (histórico).</span>",
-            "foot_is_html": True,
-        },
-        {
-            "label": "RMSE",
-            "value": money(rmse_ne),
-            "foot": "<span class='forecast-foot-note'>Raíz del error cuadrático medio.</span>",
-            "foot_is_html": True,
-        },
-        _mape_card(mape_ne, thr_exc, thr_good, thr_ok),
-    ]
-    _render_metric_cards(cards_ne)
-
-    with st.expander("¿Cómo leer este bloque? (Cuentas No Especiales)"):
-        _metrics_explainer_block("Cuentas No Especiales", thr_exc, thr_good, thr_ok)
-
+c1, c2 = st.columns(2)
+with c1:
+    _section_ce(df_base, "Cuenta Especial", True)
+with c2:
+    _section_ce(df_base, "No Cuenta Especial", False)
