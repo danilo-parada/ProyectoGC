@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
@@ -41,6 +41,40 @@ TAB_LABELS = [
 ]
 
 ss.setdefault("_active_tab", TAB_LABELS[0])
+ss.setdefault("wizard_mode", False)
+
+def _active_tab_label() -> str:
+    """Return the label of the active tab stored in session.
+
+    Ensures the value is a valid label in TAB_LABELS to satisfy Streamlit's
+    st.tabs default parameter, which expects a label in this version.
+    """
+    label = ss.get("_active_tab", TAB_LABELS[0])
+    return label if label in TAB_LABELS else TAB_LABELS[0]
+
+def _next_tab(label: str) -> str:
+    try:
+        idx = TAB_LABELS.index(label)
+        return TAB_LABELS[min(idx + 1, len(TAB_LABELS) - 1)]
+    except ValueError:
+        return TAB_LABELS[0]
+
+def _navigate_to_kpi():
+    """Try to navigate to KPI page programmatically with safe fallbacks."""
+    try:
+        # Streamlit >= 1.22 supports switch_page
+        st.switch_page("pages/10_Tablero_KPI.py")
+        return
+    except Exception:
+        pass
+    try:
+        st.switch_page("Tablero_KPI")
+        return
+    except Exception:
+        pass
+    # HTML meta refresh fallback + link button
+    safe_markdown('<meta http-equiv="refresh" content="0; url=/Tablero_KPI" />')
+    st.link_button("Ir a Tablero KPI", "/Tablero_KPI")
 
 
 def _set_active_tab(label: str) -> None:
@@ -48,6 +82,30 @@ def _set_active_tab(label: str) -> None:
 
     if label in TAB_LABELS:
         ss["_active_tab"] = label
+
+def _uploader_snapshot(value) -> tuple:
+    """Create a stable snapshot for file_uploader values.
+
+    Returns a tuple of (name, size) for each file to compare across reruns.
+    """
+    if value is None:
+        return tuple()
+    try:
+        # Multiple files
+        if isinstance(value, (list, tuple)):
+            return tuple((getattr(f, "name", ""), getattr(f, "size", 0)) for f in value if f is not None)
+        # Single file
+        return ((getattr(value, "name", ""), getattr(value, "size", 0)),)
+    except Exception:
+        return tuple()
+
+def _set_tab_on_new_upload(key: str, current_value, tab_label: str) -> None:
+    snap_key = f"_snap_{key}"
+    snap_prev = ss.get(snap_key, tuple())
+    snap_now = _uploader_snapshot(current_value)
+    if snap_now and snap_now != snap_prev:
+        _set_active_tab(tab_label)
+    ss[snap_key] = snap_now
 
 
 def _flash_and_rerun(level: str, message: str, *, tab: Optional[str] = None) -> None:
@@ -366,7 +424,7 @@ if flash_payload:
     notifier = getattr(st, level, st.info)
     notifier(message)
 
-tab_cta, tab_prov, tab_fact, tab_hon = st.tabs(TAB_LABELS, default=ss.get("_active_tab"))
+tab_cta, tab_prov, tab_fact, tab_hon = st.tabs(TAB_LABELS, default=_active_tab_label())
 
 with tab_cta:
     st.markdown("#### 1. Maestra de cuentas (obligatorio)")
@@ -385,7 +443,7 @@ with tab_cta:
         key="upload_ctaes",
     )
     if maestra_file is not None:
-        _set_active_tab(TAB_LABELS[0])
+        _set_tab_on_new_upload("upload_ctaes", maestra_file, TAB_LABELS[0])
         try:
             df_ctaes = read_any(maestra_file)
             load_cuentas_especiales(df_ctaes, col_codigo_contable="codigo_contable")
@@ -403,6 +461,7 @@ with tab_cta:
         cta_preview_open = not df_cta_preview.empty
     with st.expander("Vista previa maestra (100 filas)", expanded=cta_preview_open):
         _render_preview_table(ss.get("df_ctaes_raw"))
+    # (Flujo simple) sin botones de continuar
 
 with tab_prov:
     st.markdown("#### 2. Proveedores prioritarios (opcional)")
@@ -419,7 +478,7 @@ with tab_prov:
         key="upload_prio",
     )
     if prov_file is not None:
-        _set_active_tab(TAB_LABELS[1])
+        _set_tab_on_new_upload("upload_prio", prov_file, TAB_LABELS[1])
         try:
             df_prov = read_any(prov_file)
             load_proveedores_prioritarios(df_prov, col_codigo="codigo_proveedor")
@@ -437,6 +496,7 @@ with tab_prov:
         prio_preview_open = not df_prio_preview.empty
     with st.expander("Vista previa proveedores (100 filas)", expanded=prio_preview_open):
         _render_preview_table(ss.get("df_prio_raw"))
+    # (Flujo simple) sin botones de continuar
 
 with tab_fact:
     st.markdown("#### 3. Facturas")
@@ -456,7 +516,7 @@ with tab_fact:
     )
 
     if files:
-        _set_active_tab(TAB_LABELS[2])
+        _set_tab_on_new_upload("upload_docs", files, TAB_LABELS[2])
         try:
             df_list = [read_any(f) for f in files]
             df_raw = pd.concat(df_list, ignore_index=True)
@@ -514,6 +574,7 @@ with tab_fact:
             ss.get("df"),
             integerize=True,
         )
+    # (Flujo simple) sin botones de continuar
 
     st.markdown(
         """
@@ -966,7 +1027,7 @@ with tab_hon:
         st.caption(f"Honorarios cargados actualmente: {len(hon_actual):,} filas normalizadas.")
 
     if honorarios_file is not None:
-        _set_active_tab(TAB_LABELS[3])
+        _set_tab_on_new_upload("upload_honorarios", honorarios_file, TAB_LABELS[3])
         try:
             df_hon_raw = read_any(honorarios_file)
             df_hon_norm = load_honorarios(df_hon_raw)
@@ -986,6 +1047,8 @@ with tab_hon:
                 ss["honorarios"] = df_hon_norm
                 ss["honorarios_enriquecido"] = None
                 ss["honorarios_summary"] = build_honorarios_summary(total_override=len(df_hon_norm))
+                if ss.get("wizard_mode"):
+                    _flash_and_rerun("info", "Honorarios cargados. Intentando match automático…", tab=TAB_LABELS[3])
         except Exception as e:
             st.error(f"No se pudo leer el archivo de honorarios: {e}")
 
@@ -996,51 +1059,26 @@ with tab_hon:
     hon_enriquecido = ss.get("honorarios_enriquecido")
     match_disponible = isinstance(hon_enriquecido, pd.DataFrame) and not getattr(hon_enriquecido, "empty", True)
 
-    button_slot = st.empty()
-    helper_slot = st.empty()
-
-    match_hon_btn = False
-    if not match_disponible:
-        if honorarios_cargados:
-            match_ready = cuentas_cargadas
-            match_hon_btn = button_slot.button("Match con cuentas especiales", disabled=not match_ready)
-            helper_slot.empty()
-            if not cuentas_cargadas:
-                helper_slot.caption("Necesitas cargar la maestra de cuentas para habilitar el match.")
-        else:
-            helper_slot.caption("Carga honorarios para habilitar el match con cuentas especiales.")
-    else:
-        button_slot.empty()
-        helper_slot.empty()
-
-    if match_hon_btn:
+    # Match automático cuando hay honorarios y maestra cargadas
+    if honorarios_cargados and cuentas_cargadas:
         df_hon = ss.get("honorarios")
         df_bancos = ss.get("df_ctaes_raw")
-        if df_hon is None or (isinstance(df_hon, pd.DataFrame) and df_hon.empty):
-            st.error("Carga honorarios antes de ejecutar el match.")
-        elif df_bancos is None or (isinstance(df_bancos, pd.DataFrame) and df_bancos.empty):
-            st.error("Debes cargar la maestra de cuentas especiales antes de cruzar honorarios.")
-        else:
-            try:
-                df_hon_enr = merge_honorarios_con_bancos(df_hon, df_bancos)
-                if df_hon_enr is None or df_hon_enr.empty:
-                    ss["honorarios_enriquecido"] = None
-                    st.warning("No se genero informacion enriquecida para honorarios.")
-                else:
-                    ss["honorarios_enriquecido"] = df_hon_enr
-                    hon_enriquecido = df_hon_enr
-                    hon_cols = set(df_hon.columns)
-                    new_cols = [c for c in df_hon_enr.columns if c not in hon_cols]
-                    match_col = next((c for c in ["codigo_contable", "banco", "cuenta_corriente", "sede_pago"] if c in new_cols), None)
-                    if match_col:
-                        matches = df_hon_enr[match_col].notna().sum()
-                        ss["honorarios_summary"] = build_honorarios_summary(df_hon_enr)
-                        message = f"Match completado: {matches:,} honorarios con datos bancarios de {len(df_hon_enr):,} filas."
-                        _flash_and_rerun("success", message, tab=TAB_LABELS[3])
-                    else:
-                        st.warning("Match ejecutado pero no se detectaron columnas nuevas desde la maestra. Verifica la llave centro_costo_costeo / codigo_contable.")
-            except Exception as e:
-                st.error(f"No se pudo realizar el match con la maestra de bancos: {e}")
+        try:
+            df_hon_enr = merge_honorarios_con_bancos(df_hon, df_bancos)
+            if isinstance(df_hon_enr, pd.DataFrame) and not df_hon_enr.empty:
+                prev_shape = tuple(ss.get("honorarios_enriquecido").shape) if isinstance(ss.get("honorarios_enriquecido"), pd.DataFrame) else None
+                ss["honorarios_enriquecido"] = df_hon_enr
+                ss["honorarios_summary"] = build_honorarios_summary(df_hon_enr)
+                new_shape = tuple(df_hon_enr.shape)
+                if new_shape != prev_shape:
+                    st.success(f"Match con cuentas especiales ejecutado automáticamente. Filas enriquecidas: {new_shape[0]:,}.")
+                    if ss.get("wizard_mode"):
+                        # Finaliza el flujo: navegar a KPI
+                        _navigate_to_kpi()
+            else:
+                st.warning("Match automático ejecutado, pero no se generó información enriquecida.")
+        except Exception as e:
+            st.error(f"No se pudo realizar el match automático con la maestra de bancos: {e}")
 
     hon_enriquecido = ss.get("honorarios_enriquecido")
     match_disponible = isinstance(hon_enriquecido, pd.DataFrame) and not getattr(hon_enriquecido, "empty", True)
@@ -1055,6 +1093,7 @@ with tab_hon:
         hon_preview_open = not df_hon_norm.empty
     with st.expander("Honorarios normalizados (vista previa 100 filas)", expanded=hon_preview_open):
         _render_preview_table(ss.get("honorarios"))
+    # (Flujo simple) sin botón finalizar
 
 safe_markdown('<div class="app-separator"></div>')
 
