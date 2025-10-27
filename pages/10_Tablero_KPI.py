@@ -433,7 +433,8 @@ safe_markdown('<div class="app-separator"></div>')
 st.subheader("Analisis interactivo de tiempos")
 
 ctrl_row1 = st.columns(4)
-max_dias_pag = ctrl_row1[0].slider("Dia maximo a visualizar", 30, 365, 100, 10, key="max_dias_pag")
+# Por defecto 60 dias como ventana principal
+max_dias_pag = ctrl_row1[0].slider("Dia maximo a visualizar", 30, 365, 60, 10, key="max_dias_pag")
 bins_pag     = ctrl_row1[1].slider("Numero de clases (columnas)", 10, 100, 25, 5, key="bins_pag")
 
 ce_local = "Todas"
@@ -476,7 +477,14 @@ def _hist_with_two_means(series: pd.Series, nbins: int, color: str,
     vals = pd.to_numeric(series, errors="coerce")
     vals = vals[(vals >= 0) & (vals <= xmax)]
     fig = go.Figure()
-    fig.add_trace(go.Histogram(x=vals, nbinsx=nbins, marker_color=color))
+    fig.add_trace(
+        go.Histogram(
+            x=vals,
+            nbinsx=nbins,
+            marker=dict(color=color, line=dict(width=0)),
+            opacity=0.95,
+        )
+    )
     # GLOBAL
     if pd.notna(mean_global):
         fig.add_vline(x=mean_global, line_dash="solid", line_color=PURP)
@@ -489,7 +497,16 @@ def _hist_with_two_means(series: pd.Series, nbins: int, color: str,
         fig.add_annotation(x=mean_local, y=1.04, xref="x", yref="paper",
                            text=f"Promedio local: {one_decimal(mean_local)} días",
                            showarrow=False, font=dict(color=GRN))
-    fig.update_layout(height=320, margin=dict(l=20,r=20,t=56,b=20), title=title)
+    fig.update_layout(
+        height=420,
+        bargap=0.08,
+        margin=dict(l=20, r=20, t=56, b=30),
+        title=title,
+        plot_bgcolor="#ffffff",
+        paper_bgcolor="#ffffff",
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(200,200,200,0.35)", zeroline=False, linecolor="#1f2a55")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(200,200,200,0.35)", zeroline=False, linecolor="#1f2a55")
     return fig, vals
 
 def _stats_and_counts(vals: pd.Series, xmax: int):
@@ -630,7 +647,7 @@ df_pend_contab_loc = df_no_pag_loc[mask_sin_cc & mask_sin_pago].copy()
 df_contab_sin_pago_loc = df_no_pag_loc[mask_con_cc & mask_sin_pago].copy()
 
 row_np = st.columns(2)
-max_dias_no = row_np[0].slider("Dia maximo a visualizar (No Pagadas)", 30, 365, 100, 10, key="max_dias_no")
+max_dias_no = row_np[0].slider("Dia maximo a visualizar (No Pagadas)", 30, 365, 60, 10, key="max_dias_no")
 bins_no     = row_np[1].slider("Número de clases (No Pagadas)", 10, 100, 25, 5, key="bins_no")
 
 def _hist_np_two_means(series: pd.Series, nbins: int, color: str, xmax: int,
@@ -638,7 +655,14 @@ def _hist_np_two_means(series: pd.Series, nbins: int, color: str, xmax: int,
     vals = pd.to_numeric(series, errors="coerce")
     vals = vals[(vals >= 0) & (vals <= xmax)]
     fig = go.Figure()
-    fig.add_trace(go.Histogram(x=vals, nbinsx=nbins, marker_color=color))
+    fig.add_trace(
+        go.Histogram(
+            x=vals,
+            nbinsx=nbins,
+            marker=dict(color=color, line=dict(width=0)),
+            opacity=0.95,
+        )
+    )
     # GLOBAL
     if pd.notna(mean_global):
         fig.add_vline(x=mean_global, line_dash="solid", line_color=PURP)
@@ -651,7 +675,16 @@ def _hist_np_two_means(series: pd.Series, nbins: int, color: str, xmax: int,
         fig.add_annotation(x=mean_local, y=1.04, xref="x", yref="paper",
                            text=f"Promedio local: {one_decimal(mean_local)} días",
                            showarrow=False, font=dict(color=GRN))
-    fig.update_layout(height=320, margin=dict(l=20,r=20,t=56,b=20), title=title)
+    fig.update_layout(
+        height=420,
+        bargap=0.08,
+        margin=dict(l=20, r=20, t=56, b=30),
+        title=title,
+        plot_bgcolor="#ffffff",
+        paper_bgcolor="#ffffff",
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(200,200,200,0.35)", zeroline=False, linecolor="#1f2a55")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(200,200,200,0.35)", zeroline=False, linecolor="#1f2a55")
     return fig, vals
 
 def _stats_block(vals: pd.Series, xmax: int):

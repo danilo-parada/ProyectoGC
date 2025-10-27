@@ -368,7 +368,7 @@ st.set_page_config(page_title="Forecast", layout="wide", initial_sidebar_state="
 header_ui(
     title="Laboratorio de Forecast de Pagos",
     current_page="Forecast",
-    subtitle="Proyecciones sobre pagos (monto_autorizado en fecha_pagado)",
+    subtitle="Proyecciones sobre pagos",
     nav_active="forecast",
 )
 

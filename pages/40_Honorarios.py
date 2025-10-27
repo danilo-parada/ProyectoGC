@@ -1021,25 +1021,8 @@ if count_pagadas:
     pagadas["extemporaneo"] = extemporaneo
     pagadas["monto_cuota_eff"] = _quota_amount_series(pagadas)
 
-    # Resumen por tipo de emision y pago a tiempo
-    resumen_basic = (
-        pagadas.groupby(["tipo_emision_label", "pago_tiempo_label"], dropna=False)
-        .agg(Boletas=("monto_cuota_eff", "count"), Monto_Cuota=("monto_cuota_eff", "sum"))
-        .reset_index()
-        .rename(columns={"tipo_emision_label": "Tipo de Emision", "pago_tiempo_label": "Pago"})
-    )
-    if not resumen_basic.empty:
-        disp = resumen_basic.copy()
-        disp["Monto_Cuota"] = disp["Monto_Cuota"].map(money)
-        disp = sanitize_df(disp)
-        st.markdown("#### Tipologia de pagos (PAGADAS)")
-        style_table(_table_style(disp))
-        st.download_button(
-            "Descargar Tipologia Basica",
-            data=excel_bytes_single(resumen_basic, "Tipologia_Basica_Pagadas"),
-            file_name="pagadas_tipologia_basica.xlsx",
-            disabled=resumen_basic.empty,
-        )
+    # (Eliminado) Resumen por tipo de emision y pago a tiempo
+    # Se omite la tabla "Tipologia de pagos (PAGADAS)" porque la detallada es suficiente.
 
     # Resumen por clasificacion global
     resumen_global = (
@@ -1076,13 +1059,25 @@ if count_pagadas:
         }
         disp_g["Condiciones de fecha"] = disp_g["Clasificacion"].map(cond_map2).fillna("")
 
+        # Agregar columna Pago (A tiempo / Atrasado) segun la Clasificacion
+        pago_map = {
+            "Flujo normal de pago - Pago anticipado": "A tiempo",
+            "Flujo normal de pago - Pago mismo dia de fecha cuota": "A tiempo",
+            "Pago a tiempo - Emision vencida": "A tiempo",
+            "Pago tardio - Emision valida": "Atrasado",
+            "Fuera de plazo - CE coincide con emision": "Atrasado",
+            "Extemporaneo total": "Atrasado",
+            "Pago previo a emision": "Atrasado",
+        }
+        disp_g["Pago"] = disp_g["Clasificacion"].map(pago_map).fillna("")
+
         # Ordenar por Tipo de Emision (Valida primero, luego Vencida) y luego por Clasificacion
         order_map = {"Emision valida": 0, "Emision vencida": 1}
         disp_g["__ord"] = disp_g["Tipo de Emision"].map(order_map).fillna(99)
         disp_g = disp_g.sort_values(by=["__ord", "Clasificacion"]).drop(columns=["__ord"]) 
         disp_g["Monto_Cuota"] = disp_g["Monto_Cuota"].map(money)
-        # Reordenar columnas: Tipo de Emision primero y luego condiciones
-        cols_order = ["Tipo de Emision", "Clasificacion", "Condiciones de fecha", "Boletas", "Monto_Cuota"]
+        # Reordenar columnas: Tipo de Emision, Pago, Clasificacion y luego condiciones
+        cols_order = ["Tipo de Emision", "Pago", "Clasificacion", "Condiciones de fecha", "Boletas", "Monto_Cuota"]
         existing = [c for c in cols_order if c in disp_g.columns]
         disp_g = disp_g[existing + [c for c in disp_g.columns if c not in existing]]
         disp_g = sanitize_df(disp_g)
@@ -1236,7 +1231,9 @@ if count_pagadas:
             bin_size_new = st.slider("Ancho de columnas (dias)", 1, 60, 2)
         max_domain_new = int(max(1, np.ceil(np.nanmax(tpe_all)))) if not tpe_all.empty else 1
         with cmax:
-            max_days_new = st.slider("Max dias a mostrar", 1, int(max_domain_new), int(max_domain_new))
+            # Por defecto 60 dias; si el dominio es menor, usar el maximo disponible
+            default_max = min(60, int(max_domain_new)) if int(max_domain_new) >= 60 else int(max_domain_new)
+            max_days_new = st.slider("Max dias a mostrar", 1, int(max_domain_new), default_max)
         mask_new = pd.Series(True, index=pagadas.index)
         if ce_available:
             if ce_val_new == "Cuenta especial":
@@ -1255,15 +1252,36 @@ if count_pagadas:
         mean_all = float(np.nanmean(tpe_all)) if not tpe_all.empty else float("nan")
         mean_fil = float(np.nanmean(tpe_fil)) if not tpe_fil.empty else float("nan")
         fig_new = go.Figure()
-        if not tpe_all_vis.empty:
-            fig_new.add_histogram(x=tpe_all_vis, xbins=dict(size=bin_size_new), name="General", opacity=0.45, marker_color="#9aa5ff")
-        if not tpe_fil_vis.empty:
-            fig_new.add_histogram(x=tpe_fil_vis, xbins=dict(size=bin_size_new), name="Filtro", opacity=0.75, marker_color="#F28E2B")
-        fig_new.update_layout(barmode="overlay", bargap=0.08, height=560, margin=dict(l=28,r=28,t=36,b=36), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(16,26,44,0.85)", font=dict(color="#DFE7F5"), legend=dict(orientation="h", yanchor="bottom", y=-0.2), xaxis_title="Dias", yaxis_title="Cantidad de honorarios")
+        # Un solo color de barra acorde al proyecto (azul)
+        base_color = "#4f9cff"
+        source_vals = tpe_fil_vis if not tpe_fil_vis.empty else tpe_all_vis
+        fig_new.add_histogram(
+            x=source_vals,
+            xbins=dict(size=bin_size_new),
+            name="Distribucion",
+            opacity=0.95,
+            marker=dict(color=base_color, line=dict(width=0)),
+        )
+        fig_new.update_layout(
+            bargap=0.08,
+            height=600,
+            margin=dict(l=28, r=28, t=36, b=36),
+            template="plotly_white",
+            plot_bgcolor="#ffffff",
+            paper_bgcolor="#ffffff",
+            font=dict(color="#1f2a55"),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2),
+            xaxis_title="Dias",
+            yaxis_title="Cantidad de honorarios",
+        )
+        fig_new.update_xaxes(showgrid=True, gridcolor="rgba(200,200,200,0.35)", zeroline=False, linecolor="#1f2a55")
+        fig_new.update_yaxes(showgrid=True, gridcolor="rgba(200,200,200,0.35)", zeroline=False, linecolor="#1f2a55")
         if not np.isnan(mean_all):
-            fig_new.add_vline(x=mean_all, line_color="#3f51b5", line_width=2, line_dash="dash", annotation=dict(text=f"Prom gral {mean_all:.1f}d", font=dict(color="#9aa5ff"), bgcolor="rgba(15,25,44,0.85)"))
+            fig_new.add_vline(x=mean_all, line_color="#3f51b5", line_width=2, line_dash="dash",
+                              annotation=dict(text=f"Prom gral {mean_all:.1f}d", font=dict(color="#3f51b5"), bgcolor="#ffffff"))
         if not np.isnan(mean_fil):
-            fig_new.add_vline(x=mean_fil, line_color="#F28E2B", line_width=2, line_dash="dot", annotation=dict(text=f"Prom filtro {mean_fil:.1f}d", font=dict(color="#F28E2B"), bgcolor="rgba(15,25,44,0.85)"))
+            fig_new.add_vline(x=mean_fil, line_color="#2ecc71", line_width=2, line_dash="dot",
+                              annotation=dict(text=f"Prom filtro {mean_fil:.1f}d", font=dict(color="#2ecc71"), bgcolor="#ffffff"))
         st.plotly_chart(fig_new, use_container_width=True)
         # Indicadores como tarjetas horizontales (estilo app-card)
         def _fmt_days(x: float) -> str:
@@ -1273,9 +1291,16 @@ if count_pagadas:
                 return "s/d"
 
         cards_metrics: list[str] = []
-        cards_metrics.append(_card_html("Total (general)", f"{len(tpe_all):,}", compact=True))
+        # Conteos dentro y fuera del rango (filtro de max_dias solo aplica a estas tarjetas)
+        base_vals = tpe_fil if not tpe_fil.empty else tpe_all
+        base_vals = pd.to_numeric(base_vals, errors="coerce").dropna()
+        n_total = int(len(base_vals))
+        n_le = int((base_vals <= max_days_new).sum())
+        n_gt = max(0, n_total - n_le)
+        cards_metrics.append(_card_html("Total observaciones", f"{n_total:,}", compact=True))
+        cards_metrics.append(_card_html(f"≤ {max_days_new} d", f"{n_le:,}", compact=True))
+        cards_metrics.append(_card_html(f"> {max_days_new} d", f"{n_gt:,}", compact=True))
         cards_metrics.append(_card_html("Prom general", _fmt_days(mean_all) if not np.isnan(mean_all) else "s/d", compact=True))
-        cards_metrics.append(_card_html("Total (filtro)", f"{len(tpe_fil):,}", compact=True, tone="accent"))
         cards_metrics.append(_card_html("Prom filtro", _fmt_days(mean_fil) if not np.isnan(mean_fil) else "s/d", compact=True, tone="accent"))
 
         if not tpe_fil.empty:
