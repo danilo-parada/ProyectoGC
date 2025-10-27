@@ -169,6 +169,27 @@ body {
   color: var(--app-text);
 }
 
+/* Variantes para tarjetas (Forecast asesor) */
+.app-card--wide {
+  grid-column: span 2;
+}
+
+.app-card--advice {
+  background: linear-gradient(145deg, #0f3b2e, #0a2a22);
+  border-color: rgba(66, 214, 164, 0.35);
+  box-shadow: 0 18px 42px rgba(6, 35, 24, 0.35);
+}
+
+.app-card--advice .app-card__title,
+.app-card--advice .app-card__value,
+.app-card--advice .app-card__subtitle {
+  color: #e9fff5;
+}
+
+.app-card--advice .app-card__subtitle {
+  font-size: 0.95rem;
+}
+
 .app-card__trend {
   margin-top: 0.4rem;
   display: inline-flex;
