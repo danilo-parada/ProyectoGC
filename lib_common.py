@@ -404,26 +404,63 @@ def clean_estado_cuota(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def merge_honorarios_con_bancos(df_honorarios: pd.DataFrame, df_bancos: pd.DataFrame) -> pd.DataFrame:
-    """Aplica un left join entre honorarios y bancos especiales."""
+    """Left join robusto de Honorarios con Maestra de Cuentas Especiales.
+
+    - Llave: honorarios.centro_costo_costeo (fallback: codigo_centro_costo)
+             ↔ cuentas_especiales.codigo_contable (fallback: key_cc)
+    - Arrastra exactamente estas 7 columnas desde la maestra:
+      ano_proyecto, proyecto, banco, cuenta_corriente, cuenta_contable,
+      cuenta_cont_descripcion, sede_pago
+    """
+
     if df_honorarios is None or getattr(df_honorarios, "empty", True):
         return df_honorarios
     if df_bancos is None or getattr(df_bancos, "empty", True):
         return df_honorarios.copy()
-    left_key = next((col for col in ("centro_costo_costeo", "codigo_centro_costo") if col in df_honorarios.columns), None)
-    right_key = next((col for col in ("codigo_contable", "key_cc") if col in df_bancos.columns), None)
+
+    left_key = None
+    for cand in ("centro_costo_costeo", "codigo_centro_costo"):
+        if cand in df_honorarios.columns:
+            left_key = cand
+            break
+
+    right_key = None
+    for cand in ("codigo_contable", "key_cc"):
+        if cand in df_bancos.columns:
+            right_key = cand
+            break
+
     if left_key is None or right_key is None:
         return df_honorarios.copy()
+
     left = df_honorarios.copy()
     right = df_bancos.copy()
-    left["_merge_key_cc"] = _norm_key_series(left[left_key])
-    right["_merge_key_cc"] = _norm_key_series(right[right_key])
-    cols_bancos = ["_merge_key_cc"]
-    for col in ["codigo_contable", "ano_proyecto", "proyecto", "sede", "sede_pago", "banco", "cuenta_corriente", "cuenta_contable", "cuenta_cont_descripcion"]:
-        if col in right.columns and col not in cols_bancos:
-            cols_bancos.append(col)
-    right_subset = right[cols_bancos].drop_duplicates("_merge_key_cc")
+
+    left["_merge_key_cc"] = _norm_key_series(left[left_key].astype(str))
+    right["_merge_key_cc"] = _norm_key_series(right[right_key].astype(str))
+
+    # Solo las 7 columnas solicitadas
+    extras = [
+        "ano_proyecto",
+        "proyecto",
+        "banco",
+        "cuenta_corriente",
+        "cuenta_contable",
+        "cuenta_cont_descripcion",
+        "sede_pago",
+    ]
+    cols_bancos = [c for c in extras if c in right.columns]
+    right_subset = right[["_merge_key_cc"] + cols_bancos].drop_duplicates("_merge_key_cc")
+
     merged = left.merge(right_subset, on="_merge_key_cc", how="left", suffixes=("", "_cta"))
-    return merged.drop(columns="_merge_key_cc")
+    merged = merged.drop(columns="_merge_key_cc")
+
+    # Garantizar presencia de las 7 columnas (aunque la maestra no las traiga)
+    for col in extras:
+        if col not in merged.columns:
+            merged[col] = pd.NA
+
+    return merged
 
 
 def load_honorarios(df_hon: pd.DataFrame) -> Optional[pd.DataFrame]:

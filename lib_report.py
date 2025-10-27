@@ -120,6 +120,94 @@ def _limit_columns(df: pd.DataFrame, max_cols: int = 12) -> pd.DataFrame:
     return df.iloc[:, :max_cols].copy()
 
 
+# ===================== Honorarios schema (PDF) =====================
+_HON_PDF_ORDER = [
+    "RUT",
+    "Inicio Convenio",
+    "Término Convenio",
+    "Fecha Emisión",
+    "Fecha Cuota",
+    "Dias_Hasta_Cuota",
+    "Estado Cuota",
+    "Código Centro",
+    "Monto Cuota",
+    "Banco",
+    "Cuenta Corriente",
+]
+
+
+def _first_present_col(d: pd.DataFrame, candidates: list[str]) -> str:
+    for c in candidates:
+        if c in d.columns:
+            return c
+    return ""
+
+
+def _to_honorarios_pdf_schema(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or getattr(df, "empty", True):
+        return pd.DataFrame(columns=_HON_PDF_ORDER)
+
+    d = df.copy()
+
+    today = pd.Timestamp.today().normalize()
+
+    rut_col = _first_present_col(d, ["rut", "prr_rut_real"])
+    ini_col = _first_present_col(d, ["cnv_fecha_inicio"])  # inicio convenio
+    fin_col = _first_present_col(d, ["cnv_fecha_termino"])  # término convenio
+    em_col = _first_present_col(d, ["fecha_emision", "fac_fecha_factura"])
+    cuo_col = _first_present_col(d, ["fecha_cuota", "fecha_cc", "fecha_cuota_ref"])
+    dias_col = _first_present_col(d, ["Dias_Hasta_Cuota", "dias_a_vencer"])
+    est_col = _first_present_col(d, ["estado_cuota", "estado"])  # estado de cuota
+    cod_centro_col = _first_present_col(d, ["codigo_centro", "codigo_centro_costo", "key_cc"])
+    monto_col = _first_present_col(d, ["monto_cuota", "monto_autorizado", "fac_monto_total", "importe_deuda"])
+    banco_col = _first_present_col(d, ["banco"])  # Banco
+    cta_corr_col = _first_present_col(d, ["cuenta_corriente", "cta_bnc_especial"])  # Cuenta Corriente
+
+    out = pd.DataFrame(index=d.index)
+    out["RUT"] = d[rut_col] if rut_col else ""
+    out["Inicio Convenio"] = pd.to_datetime(d[ini_col], errors="coerce") if ini_col else pd.NaT
+    out["Término Convenio"] = pd.to_datetime(d[fin_col], errors="coerce") if fin_col else pd.NaT
+    out["Fecha Emisión"] = pd.to_datetime(d[em_col], errors="coerce") if em_col else pd.NaT
+    out["Fecha Cuota"] = pd.to_datetime(d[cuo_col], errors="coerce") if cuo_col else pd.NaT
+
+    if dias_col:
+        dias_vals = pd.to_numeric(d[dias_col], errors="coerce")
+    elif cuo_col:
+        dias_vals = (pd.to_datetime(d[cuo_col], errors="coerce") - today).dt.days
+    else:
+        dias_vals = pd.Series(np.nan, index=d.index)
+    out["Dias_Hasta_Cuota"] = dias_vals
+
+    out["Estado Cuota"] = d[est_col] if est_col else ""
+
+    if cod_centro_col:
+        out["Código Centro"] = d[cod_centro_col]
+    else:
+        out["Código Centro"] = ""
+
+    # Monto Cuota como dinero
+    if monto_col:
+        mser = pd.to_numeric(d[monto_col], errors="coerce").fillna(0.0)
+    else:
+        mser = pd.Series(0.0, index=d.index)
+    out["Monto Cuota"] = mser.map(money)
+
+    # Banco / Cuenta Corriente
+    out["Banco"] = d[banco_col] if banco_col else ""
+    out["Cuenta Corriente"] = d[cta_corr_col] if cta_corr_col else ""
+
+    # Fechas a texto corto
+    for col in ["Inicio Convenio", "Término Convenio", "Fecha Emisión", "Fecha Cuota"]:
+        try:
+            out[col] = pd.to_datetime(out[col], errors="coerce").dt.strftime("%Y-%m-%d")
+        except Exception:
+            out[col] = out[col].astype(str)
+
+    # Selección y orden final
+    keep = [c for c in _HON_PDF_ORDER if c in out.columns]
+    out = out[keep].copy()
+    return out
+
 # ===================== Helpers robustos =====================
 def _safe_numeric_series(d: pd.DataFrame, col: str, default: float = 0.0) -> pd.Series:
     """
@@ -306,6 +394,7 @@ def generate_pdf_report(
     filtros: Optional[Dict] = None,
     presupuesto_monto: Optional[float] = None,
     seleccion_hoy_df: Optional[pd.DataFrame] = None,
+    honorarios: bool = False,
 ) -> Optional[bytes]:
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -384,7 +473,7 @@ def generate_pdf_report(
         # Pagos Críticos (azul)
         if isinstance(pagos_criticos_df, pd.DataFrame) and not pagos_criticos_df.empty:
             story.append(Paragraph("<b>Pagos Críticos</b>", styles["body_left"]))
-            df_c = _to_compact_schema(pagos_criticos_df)
+            df_c = _to_honorarios_pdf_schema(pagos_criticos_df) if honorarios else _to_compact_schema(pagos_criticos_df)
             df_c = _limit_columns(df_c, 12)
 
             for chunk in _chunk_rows(df_c, 40):
@@ -400,7 +489,7 @@ def generate_pdf_report(
             story.append(Paragraph("<b>Selección a Pagar Hoy (CRÍTICO)</b>", styles["body_left"]))
             if presupuesto_monto is not None:
                 story.append(Paragraph(f"Presupuesto: <b>{money(presupuesto_monto)}</b>", styles["body_left"]))
-            df_sel = _to_compact_schema(seleccion_hoy_df)
+            df_sel = _to_honorarios_pdf_schema(seleccion_hoy_df) if honorarios else _to_compact_schema(seleccion_hoy_df)
             df_sel = _limit_columns(df_sel, 12)
 
             for chunk in _chunk_rows(df_sel, 40):
@@ -416,3 +505,4 @@ def generate_pdf_report(
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
+
