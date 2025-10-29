@@ -519,6 +519,10 @@ def load_honorarios(df_hon: pd.DataFrame) -> Optional[pd.DataFrame]:
     ss["honorarios"] = df_norm
     ss["honorarios_enriquecido"] = None
     ss["_honorarios_cargados"] = True
+    ss["_honorarios_match_manual_done"] = False
+    for key in list(ss.keys()):
+        if isinstance(key, str) and key.startswith("_hon_check_"):
+            ss.pop(key, None)
     return df_norm
 
 
@@ -535,6 +539,10 @@ def reset_honorarios():
         if k in st.session_state:
             st.session_state[k] = None
     st.session_state["_honorarios_cargados"] = False
+    st.session_state.pop("_honorarios_match_manual_done", None)
+    for key in list(st.session_state.keys()):
+        if isinstance(key, str) and key.startswith("_hon_check_"):
+            st.session_state.pop(key, None)
 
 def reset_proveedores():
     """Elimina proveedores prioritarios cargados en memoria."""
@@ -559,8 +567,14 @@ def reset_cuentas_especiales():
         ss["_match_summary"] = None
     if "facturas_summary" in ss:
         ss["facturas_summary"] = None
+    ss.pop("_honorarios_match_manual_done", None)
+    if "honorarios_enriquecido" in ss:
+        ss["honorarios_enriquecido"] = None
     if "honorarios_summary" in ss:
         ss["honorarios_summary"] = None
+    for key in list(ss.keys()):
+        if isinstance(key, str) and key.startswith("_hon_check_"):
+            ss.pop(key, None)
 # ============================================================
 # 8) Mapeo de columnas y normalización base
 # ============================================================

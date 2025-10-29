@@ -40,8 +40,25 @@ TAB_LABELS = [
     "4. Honorarios",
 ]
 
+HONORARIOS_MATCH_FLAG = "_honorarios_match_manual_done"
+HONORARIOS_CHECKLIST_ITEMS = [
+    (
+        "_hon_check_totales",
+        "Validé que el total de honorarios coincida con el archivo cargado.",
+    ),
+    (
+        "_hon_check_cta",
+        "Revisé que cada centro de costo tenga una cuenta especial asignada.",
+    ),
+    (
+        "_hon_check_fechas",
+        "Confirmé que los estados de cuota y las fechas clave estén completos.",
+    ),
+]
+
 ss.setdefault("_active_tab", TAB_LABELS[0])
 ss.setdefault("wizard_mode", False)
+ss.setdefault(HONORARIOS_MATCH_FLAG, False)
 
 def _active_tab_label() -> str:
     """Return the label of the active tab stored in session.
@@ -318,6 +335,25 @@ def build_facturas_summary(
         }
     return summary
 
+
+def _reset_honorarios_match_state(*, clear_enriched: bool = False, reset_summary: bool = True) -> None:
+    """Limpia banderas y checklist vinculados al match manual de honorarios."""
+
+    ss[HONORARIOS_MATCH_FLAG] = False
+    for key, _ in HONORARIOS_CHECKLIST_ITEMS:
+        ss.pop(key, None)
+
+    if clear_enriched:
+        ss["honorarios_enriquecido"] = None
+        if reset_summary:
+            df_norm = ss.get("honorarios")
+            if isinstance(df_norm, pd.DataFrame) and not df_norm.empty:
+                ss["honorarios_summary"] = build_honorarios_summary(
+                    total_override=len(df_norm)
+                )
+            else:
+                ss["honorarios_summary"] = None
+
 hon_summary = ss.get("honorarios_summary")
 hon_enr = ss.get("honorarios_enriquecido")
 if isinstance(hon_enr, pd.DataFrame) and not hon_enr.empty:
@@ -397,6 +433,7 @@ col_cta, col_prov, col_fact, col_hon = st.columns(4)
 with col_cta:
     if st.button("Reset cuentas", key="card_reset_cta", use_container_width=True):
         reset_cuentas_especiales()
+        _reset_honorarios_match_state(clear_enriched=True)
         _flash_and_rerun("warning", "Maestra de cuentas especiales eliminada.")
     safe_markdown(card_cta_html)
 
@@ -415,6 +452,7 @@ with col_fact:
 with col_hon:
     if st.button("Reset honorarios", key="card_reset_hon", use_container_width=True):
         reset_honorarios()
+        _reset_honorarios_match_state(clear_enriched=True)
         _flash_and_rerun("warning", "Honorarios eliminados de la sesion.")
     safe_markdown(card_hon_html)
 
@@ -449,6 +487,11 @@ with tab_cta:
             load_cuentas_especiales(df_ctaes, col_codigo_contable="codigo_contable")
             ss["df_ctaes_raw"] = df_ctaes
             st.success(f"Maestra de cuentas cargada: {len(df_ctaes):,} filas.")
+            _reset_honorarios_match_state(clear_enriched=True)
+            if isinstance(ss.get("honorarios"), pd.DataFrame) and not ss["honorarios"].empty:
+                st.info(
+                    "Maestra actualizada. Ejecuta el match manual de honorarios para refrescar el enlace con cuentas especiales."
+                )
             if ss.get("df") is not None:
                 df_new = normalize_types(ss["df"])
                 register_documents(df_new, dedup=False)
@@ -1046,9 +1089,14 @@ with tab_hon:
                 hon_actual = df_hon_norm
                 ss["honorarios"] = df_hon_norm
                 ss["honorarios_enriquecido"] = None
+                _reset_honorarios_match_state(clear_enriched=True, reset_summary=False)
                 ss["honorarios_summary"] = build_honorarios_summary(total_override=len(df_hon_norm))
                 if ss.get("wizard_mode"):
-                    _flash_and_rerun("info", "Honorarios cargados. Intentando match automático…", tab=TAB_LABELS[3])
+                    _flash_and_rerun(
+                        "info",
+                        "Honorarios cargados. Ejecuta el match manual con la maestra de cuentas especiales.",
+                        tab=TAB_LABELS[3],
+                    )
         except Exception as e:
             st.error(f"No se pudo leer el archivo de honorarios: {e}")
 
@@ -1058,34 +1106,70 @@ with tab_hon:
     cuentas_cargadas = isinstance(ss.get("df_ctaes_raw"), pd.DataFrame) and not ss.get("df_ctaes_raw").empty
     hon_enriquecido = ss.get("honorarios_enriquecido")
     match_disponible = isinstance(hon_enriquecido, pd.DataFrame) and not getattr(hon_enriquecido, "empty", True)
+    manual_match_done = ss.get(HONORARIOS_MATCH_FLAG, False)
 
-    # Match automático cuando hay honorarios y maestra cargadas
+    if honorarios_cargados and not cuentas_cargadas:
+        st.warning("Carga la maestra de cuentas especiales para habilitar el match manual de honorarios.")
+
     if honorarios_cargados and cuentas_cargadas:
-        df_hon = ss.get("honorarios")
-        df_bancos = ss.get("df_ctaes_raw")
-        try:
-            df_hon_enr = merge_honorarios_con_bancos(df_hon, df_bancos)
-            if isinstance(df_hon_enr, pd.DataFrame) and not df_hon_enr.empty:
-                prev_shape = tuple(ss.get("honorarios_enriquecido").shape) if isinstance(ss.get("honorarios_enriquecido"), pd.DataFrame) else None
-                ss["honorarios_enriquecido"] = df_hon_enr
-                ss["honorarios_summary"] = build_honorarios_summary(df_hon_enr)
-                new_shape = tuple(df_hon_enr.shape)
-                if new_shape != prev_shape:
-                    st.success(f"Match con cuentas especiales ejecutado automáticamente. Filas enriquecidas: {new_shape[0]:,}.")
-                    if ss.get("wizard_mode"):
-                        # Finaliza el flujo: navegar a KPI
-                        _navigate_to_kpi()
-            else:
-                st.warning("Match automático ejecutado, pero no se generó información enriquecida.")
-        except Exception as e:
-            st.error(f"No se pudo realizar el match automático con la maestra de bancos: {e}")
+        if not manual_match_done:
+            st.info(
+                "Match manual pendiente: vincula los honorarios con la maestra de cuentas especiales antes de continuar con los cálculos."
+            )
+        else:
+            st.success(
+                "Match manual ejecutado. Si actualizas la maestra u otra base, vuelve a ejecutar el match para refrescar los datos."
+            )
 
-    hon_enriquecido = ss.get("honorarios_enriquecido")
-    match_disponible = isinstance(hon_enriquecido, pd.DataFrame) and not getattr(hon_enriquecido, "empty", True)
+        match_label = (
+            "Ejecutar match manual con cuentas especiales"
+            if not manual_match_done
+            else "Reejecutar match manual"
+        )
+        if st.button(match_label, key="btn_match_honorarios_ctaes", use_container_width=True):
+            df_hon = ss.get("honorarios")
+            df_bancos = ss.get("df_ctaes_raw")
+            for key, _ in HONORARIOS_CHECKLIST_ITEMS:
+                ss.pop(key, None)
+            try:
+                df_hon_enr = merge_honorarios_con_bancos(df_hon, df_bancos)
+                if isinstance(df_hon_enr, pd.DataFrame) and not df_hon_enr.empty:
+                    ss["honorarios_enriquecido"] = df_hon_enr
+                    ss["honorarios_summary"] = build_honorarios_summary(df_hon_enr)
+                    ss[HONORARIOS_MATCH_FLAG] = True
+                    st.success(
+                        f"Match manual completado. Filas enriquecidas: {len(df_hon_enr):,}."
+                    )
+                    if ss.get("wizard_mode"):
+                        _navigate_to_kpi()
+                else:
+                    ss["honorarios_enriquecido"] = None
+                    if isinstance(df_hon, pd.DataFrame):
+                        ss["honorarios_summary"] = build_honorarios_summary(
+                            total_override=len(df_hon)
+                        )
+                    ss[HONORARIOS_MATCH_FLAG] = False
+                    st.warning(
+                        "El match manual no generó coincidencias. Revisa los códigos de centro de costo y vuelve a intentarlo."
+                    )
+            except Exception as e:
+                ss[HONORARIOS_MATCH_FLAG] = False
+                st.error(f"No se pudo realizar el match manual con la maestra de bancos: {e}")
+
+        hon_enriquecido = ss.get("honorarios_enriquecido")
+        match_disponible = isinstance(hon_enriquecido, pd.DataFrame) and not getattr(hon_enriquecido, "empty", True)
+        manual_match_done = ss.get(HONORARIOS_MATCH_FLAG, False)
+
     if match_disponible:
         ss["honorarios_summary"] = build_honorarios_summary(hon_enriquecido)
     elif not honorarios_cargados:
         ss["honorarios_summary"] = None
+
+    if manual_match_done and honorarios_cargados:
+        with st.expander("Checklist post-match de honorarios", expanded=True):
+            st.caption("Marca cada punto para confirmar que la información quedó correctamente vinculada.")
+            for key, label in HONORARIOS_CHECKLIST_ITEMS:
+                st.checkbox(label, key=key)
 
     hon_preview_open = False
     df_hon_norm = ss.get("honorarios")
