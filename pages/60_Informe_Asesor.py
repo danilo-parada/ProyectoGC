@@ -655,11 +655,12 @@ else:
 st.subheader("3) Análisis de Deuda Pendiente")
 df_nopag_all = ensure_dias_a_vencer(ensure_importe_deuda(df_nopag_all))
 
-estado_values_source = (
-    df_nopag_all["estado_cuota"]
-    if "estado_cuota" in df_nopag_all.columns and not df_nopag_all.empty
-    else pd.Series(dtype=str)
-)
+if "estado_cuota" in df_nopag_all.columns and not df_nopag_all.empty:
+    estado_values_source = df_nopag_all["estado_cuota"]
+elif "estado_cuota" in df.columns:
+    estado_values_source = df["estado_cuota"]
+else:
+    estado_values_source = pd.Series(dtype=str)
 estado_options = sorted(
     pd.Series(estado_values_source).dropna().astype(str).unique().tolist()
 )
@@ -723,7 +724,7 @@ if estado_options:
             )
         st.caption("Usa el botón ➕ para agregar estados adicionales al orden de prioridad.")
 
-df_nopag_deuda = df_nopag_all
+df_nopag_deuda = df_nopag_all.copy()
 if selected_estados and "estado_cuota" in df_nopag_deuda.columns:
     df_nopag_deuda = df_nopag_deuda[
         df_nopag_deuda["estado_cuota"].isin(selected_estados)
