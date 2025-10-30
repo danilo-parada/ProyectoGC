@@ -41,21 +41,6 @@ TAB_LABELS = [
 ]
 
 HONORARIOS_MATCH_FLAG = "_honorarios_match_manual_done"
-HONORARIOS_CHECKLIST_ITEMS = [
-    (
-        "_hon_check_totales",
-        "Validé que el total de honorarios coincida con el archivo cargado.",
-    ),
-    (
-        "_hon_check_cta",
-        "Revisé que cada centro de costo tenga una cuenta especial asignada.",
-    ),
-    (
-        "_hon_check_fechas",
-        "Confirmé que los estados de cuota y las fechas clave estén completos.",
-    ),
-]
-
 ss.setdefault("_active_tab", TAB_LABELS[0])
 ss.setdefault("wizard_mode", False)
 ss.setdefault(HONORARIOS_MATCH_FLAG, False)
@@ -340,8 +325,6 @@ def _reset_honorarios_match_state(*, clear_enriched: bool = False, reset_summary
     """Limpia banderas y checklist vinculados al match manual de honorarios."""
 
     ss[HONORARIOS_MATCH_FLAG] = False
-    for key, _ in HONORARIOS_CHECKLIST_ITEMS:
-        ss.pop(key, None)
 
     if clear_enriched:
         ss["honorarios_enriquecido"] = None
@@ -1129,8 +1112,6 @@ with tab_hon:
         if st.button(match_label, key="btn_match_honorarios_ctaes", use_container_width=True):
             df_hon = ss.get("honorarios")
             df_bancos = ss.get("df_ctaes_raw")
-            for key, _ in HONORARIOS_CHECKLIST_ITEMS:
-                ss.pop(key, None)
             try:
                 df_hon_enr = merge_honorarios_con_bancos(df_hon, df_bancos)
                 if isinstance(df_hon_enr, pd.DataFrame) and not df_hon_enr.empty:
@@ -1164,12 +1145,6 @@ with tab_hon:
         ss["honorarios_summary"] = build_honorarios_summary(hon_enriquecido)
     elif not honorarios_cargados:
         ss["honorarios_summary"] = None
-
-    if manual_match_done and honorarios_cargados:
-        with st.expander("Checklist post-match de honorarios", expanded=True):
-            st.caption("Marca cada punto para confirmar que la información quedó correctamente vinculada.")
-            for key, label in HONORARIOS_CHECKLIST_ITEMS:
-                st.checkbox(label, key=key)
 
     hon_preview_open = False
     df_hon_norm = ss.get("honorarios")
