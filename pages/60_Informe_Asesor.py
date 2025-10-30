@@ -655,6 +655,80 @@ else:
 st.subheader("3) Análisis de Deuda Pendiente")
 df_nopag_all = ensure_dias_a_vencer(ensure_importe_deuda(df_nopag_all))
 
+estado_values_source = (
+    df_nopag_all["estado_cuota"]
+    if "estado_cuota" in df_nopag_all.columns and not df_nopag_all.empty
+    else pd.Series(dtype=str)
+)
+estado_options = sorted(
+    pd.Series(estado_values_source).dropna().astype(str).unique().tolist()
+)
+default_estados: list[str] = []
+if "CONTABILIZADA" in estado_options:
+    default_estados = ["CONTABILIZADA"]
+elif estado_options:
+    default_estados = [estado_options[0]]
+
+_DEUDA_ESTADO_FILTER_KEY = "asesor_deuda_estado_multiselect"
+if _DEUDA_ESTADO_FILTER_KEY not in st.session_state:
+    st.session_state[_DEUDA_ESTADO_FILTER_KEY] = default_estados
+else:
+    current_selection = st.session_state.get(_DEUDA_ESTADO_FILTER_KEY, [])
+    if estado_options:
+        valid_selection = [opt for opt in current_selection if opt in estado_options]
+        if len(valid_selection) != len(current_selection):
+            st.session_state[_DEUDA_ESTADO_FILTER_KEY] = (
+                valid_selection if valid_selection else default_estados
+            )
+
+selected_estados: list[str] = st.session_state.get(
+    _DEUDA_ESTADO_FILTER_KEY, default_estados
+)
+
+if estado_options:
+    container_estado = st.container()
+    with container_estado:
+        label_col, button_col = st.columns([0.85, 0.15])
+        with label_col:
+            st.markdown("**Estado de cuota (orden)**")
+        available_extra_states = [
+            opt for opt in estado_options if opt not in selected_estados
+        ]
+        with button_col:
+            add_clicked = st.button(
+                "➕",
+                key="asesor_deuda_estado_add",
+                help="Agregar otro estado de cuota al filtro local.",
+                disabled=len(available_extra_states) == 0,
+            )
+        if add_clicked and available_extra_states:
+            st.session_state[_DEUDA_ESTADO_FILTER_KEY] = selected_estados + [
+                available_extra_states[0]
+            ]
+            try:
+                st.rerun()
+            except AttributeError:
+                st.experimental_rerun()
+        selected_estados = st.multiselect(
+            "Estado de cuota (orden)",
+            estado_options,
+            default=st.session_state.get(_DEUDA_ESTADO_FILTER_KEY, default_estados),
+            key=_DEUDA_ESTADO_FILTER_KEY,
+            label_visibility="collapsed",
+            placeholder="Selecciona uno o más estados",
+        )
+        if not selected_estados:
+            selected_estados = st.session_state.get(
+                _DEUDA_ESTADO_FILTER_KEY, default_estados
+            )
+        st.caption("Usa el botón ➕ para agregar estados adicionales al orden de prioridad.")
+
+df_nopag_deuda = df_nopag_all
+if selected_estados and "estado_cuota" in df_nopag_deuda.columns:
+    df_nopag_deuda = df_nopag_deuda[
+        df_nopag_deuda["estado_cuota"].isin(selected_estados)
+    ].copy()
+
 def _kpis_deuda(dfin: pd.DataFrame) -> dict:
     if dfin.empty or "dias_a_vencer" not in dfin:
         return dict(vencido=0.0,c_venc=0, hoy=0.0, c_hoy=0, por_ven=0.0,c_por=0)
@@ -722,18 +796,21 @@ def _deuda_detalle_metrics(dfin: pd.DataFrame) -> dict[str, float]:
         "sincontab_dias": sincontab_dias,
     }
 
-if df_nopag_all.empty:
-    st.info("No hay documentos pendientes.")
+if df_nopag_deuda.empty:
+    if df_nopag_all.empty:
+        st.info("No hay documentos pendientes.")
+    else:
+        st.info("No hay documentos pendientes para los filtros seleccionados.")
 else:
     n1 = (
-        df_nopag_all[df_nopag_all["Nivel"].eq("Contabilizado Pendiente de Pago")]
-        if "Nivel" in df_nopag_all
-        else df_nopag_all.iloc[0:0]
+        df_nopag_deuda[df_nopag_deuda["Nivel"].eq("Contabilizado Pendiente de Pago")]
+        if "Nivel" in df_nopag_deuda
+        else df_nopag_deuda.iloc[0:0]
     )
     n2 = (
-        df_nopag_all[df_nopag_all["Nivel"].eq("Pendiente de Contabilización")]
-        if "Nivel" in df_nopag_all
-        else df_nopag_all.iloc[0:0]
+        df_nopag_deuda[df_nopag_deuda["Nivel"].eq("Pendiente de Contabilización")]
+        if "Nivel" in df_nopag_deuda
+        else df_nopag_deuda.iloc[0:0]
     )
 
 def draw_debt_panel(title: str, dpanel: pd.DataFrame):
