@@ -1544,37 +1544,24 @@ else:
             )
 
 with col_estado:
-    label_col, add_col, remove_col = st.columns([0.7, 0.15, 0.15])
+    label_col, button_col = st.columns([0.85, 0.15])
     with label_col:
         st.markdown("**Estado de cuota (orden)**")
     selected_estados_state = st.session_state.get(_ESTADO_FILTER_KEY, default_estados)
     available_extra_states = [
         opt for opt in estado_options if opt not in selected_estados_state
     ]
-    with add_col:
+    with button_col:
         add_clicked = st.button(
             "➕",
             key="hon_estado_add",
             help="Agregar otro estado de cuota al filtro y orden",
             disabled=len(available_extra_states) == 0,
         )
-    with remove_col:
-        remove_clicked = st.button(
-            "➖",
-            key="hon_estado_remove",
-            help="Quitar el último estado del filtro",
-            disabled=len(selected_estados_state) <= 1,
-        )
     if add_clicked and available_extra_states:
         st.session_state[_ESTADO_FILTER_KEY] = selected_estados_state + [
             available_extra_states[0]
         ]
-        try:
-            st.rerun()
-        except AttributeError:
-            st.experimental_rerun()
-    if remove_clicked and len(selected_estados_state) > 1:
-        st.session_state[_ESTADO_FILTER_KEY] = selected_estados_state[:-1]
         try:
             st.rerun()
         except AttributeError:
@@ -1588,9 +1575,7 @@ with col_estado:
         placeholder="Selecciona uno o más estados",
     )
     if estado_options:
-        st.caption(
-            "Usa los botones ➕/➖ para ajustar el orden de prioridad de los estados."
-        )
+        st.caption("Usa el botón ➕ para agregar estados adicionales al orden de prioridad.")
 
 selected_estados = (
     selected_estados
