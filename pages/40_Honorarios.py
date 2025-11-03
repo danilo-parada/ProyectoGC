@@ -1367,6 +1367,102 @@ else:
 if df_nopag_all.empty:
     st.info("No hay honorarios pendientes de pago.")
 else:
+    estado_values_source_s3 = (
+        df_nopag_all["estado_cuota"]
+        if "estado_cuota" in df_nopag_all.columns
+        else pd.Series(dtype=str)
+    )
+    estado_options_s3 = sorted(
+        pd.Series(estado_values_source_s3)
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+    )
+    default_estados_s3: List[str] = []
+    if "CONTABILIZADA" in estado_options_s3:
+        default_estados_s3 = ["CONTABILIZADA"]
+    elif estado_options_s3:
+        default_estados_s3 = [estado_options_s3[0]]
+
+    _ESTADO_FILTER_KEY_S3 = "honorarios_s3_estado_multiselect"
+    if _ESTADO_FILTER_KEY_S3 not in st.session_state:
+        st.session_state[_ESTADO_FILTER_KEY_S3] = default_estados_s3
+    else:
+        current_selection_s3 = st.session_state.get(_ESTADO_FILTER_KEY_S3, [])
+        if estado_options_s3:
+            valid_selection_s3 = [
+                opt for opt in current_selection_s3 if opt in estado_options_s3
+            ]
+            if len(valid_selection_s3) != len(current_selection_s3):
+                st.session_state[_ESTADO_FILTER_KEY_S3] = (
+                    valid_selection_s3 if valid_selection_s3 else default_estados_s3
+                )
+
+    filtro_estado_col, _, _ = st.columns([1.6, 1, 1])
+    with filtro_estado_col:
+        label_col_s3, add_col_s3, remove_col_s3 = st.columns([0.7, 0.15, 0.15])
+        with label_col_s3:
+            st.markdown("**Estado de cuota (orden)**")
+        selected_estados_state_s3 = st.session_state.get(
+            _ESTADO_FILTER_KEY_S3, default_estados_s3
+        )
+        available_extra_states_s3 = [
+            opt for opt in estado_options_s3 if opt not in selected_estados_state_s3
+        ]
+        with add_col_s3:
+            add_clicked_s3 = st.button(
+                "➕",
+                key="honorarios_s3_estado_add",
+                help="Agregar otro estado de cuota al filtro y orden",
+                disabled=len(available_extra_states_s3) == 0,
+            )
+        with remove_col_s3:
+            remove_clicked_s3 = st.button(
+                "➖",
+                key="honorarios_s3_estado_remove",
+                help="Quitar el último estado del filtro",
+                disabled=len(selected_estados_state_s3) <= 1,
+            )
+        if add_clicked_s3 and available_extra_states_s3:
+            st.session_state[_ESTADO_FILTER_KEY_S3] = selected_estados_state_s3 + [
+                available_extra_states_s3[0]
+            ]
+            try:
+                st.rerun()
+            except AttributeError:
+                st.experimental_rerun()
+        if remove_clicked_s3 and len(selected_estados_state_s3) > 1:
+            st.session_state[_ESTADO_FILTER_KEY_S3] = selected_estados_state_s3[:-1]
+            try:
+                st.rerun()
+            except AttributeError:
+                st.experimental_rerun()
+        selected_estados_s3 = st.multiselect(
+            "Estado de cuota (orden)",
+            estado_options_s3,
+            default=st.session_state.get(_ESTADO_FILTER_KEY_S3, default_estados_s3),
+            key=_ESTADO_FILTER_KEY_S3,
+            label_visibility="collapsed",
+            placeholder="Selecciona uno o más estados",
+        )
+        if estado_options_s3:
+            st.caption(
+                "Usa los botones ➕/➖ para ajustar el orden de prioridad de los estados."
+            )
+
+    selected_estados_s3 = (
+        selected_estados_s3
+        if selected_estados_s3
+        else st.session_state.get(_ESTADO_FILTER_KEY_S3, default_estados_s3)
+    )
+
+    df_section3_base = df_nopag_all.copy()
+    if selected_estados_s3 and "estado_cuota" in df_section3_base.columns:
+        df_section3_base = df_section3_base[
+            df_section3_base["estado_cuota"].isin(selected_estados_s3)
+        ].copy()
+
     resumen_filter = st.radio(
         "Tipo de cuenta especial (resumen)",
         ["Todas", "Cuenta especial", "No cuenta especial"],
@@ -1375,11 +1471,13 @@ else:
     )
 
     if resumen_filter == "Cuenta especial":
-        df_resumen = df_nopag_all[df_nopag_all["cuenta_especial"] == True]
+        df_resumen = df_section3_base[df_section3_base["cuenta_especial"] == True]
     elif resumen_filter == "No cuenta especial":
-        df_resumen = df_nopag_all[df_nopag_all["cuenta_especial"] == False]
+        df_resumen = df_section3_base[
+            df_section3_base["cuenta_especial"] == False
+        ]
     else:
-        df_resumen = df_nopag_all
+        df_resumen = df_section3_base
 
     categorias_visibles = [
         "Emisión posterior a cuota",
