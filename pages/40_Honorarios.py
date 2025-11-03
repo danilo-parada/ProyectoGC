@@ -252,6 +252,12 @@ def _render_metric_block(
 # =========================================================
 # Utilidades compartidas para deuda / presupuesto
 # =========================================================
+_ESTADO_FILTER_SESSION_KEY = "hon_estado_multiselect"
+_ESTADO_FILTER_WIDGET_SECTION3 = "hon_estado_multiselect_section3"
+_ESTADO_FILTER_WIDGET_SECTION4 = "hon_estado_multiselect_main"
+_ESTADO_FILTER_BUTTON_SECTION3 = "hon_estado_add_section3"
+_ESTADO_FILTER_BUTTON_SECTION4 = "hon_estado_add"
+
 TODAY = pd.Timestamp(date.today()).normalize()
 
 TABLE_HEADER_BG = "var(--app-primary)"
@@ -338,6 +344,108 @@ _BUDGET_PANEL_STYLE = """
 }
 </style>
 """
+
+
+def _prepare_estado_filter_options(
+    df_pending: pd.DataFrame, df_full: pd.DataFrame
+) -> tuple[list[str], list[str]]:
+    if "estado_cuota" in df_pending.columns and not df_pending.empty:
+        estado_values = df_pending["estado_cuota"]
+    elif "estado_cuota" in df_full.columns:
+        estado_values = df_full["estado_cuota"]
+    else:
+        estado_values = pd.Series(dtype=str)
+
+    estado_options = sorted(
+        pd.Series(estado_values).dropna().astype(str).unique().tolist()
+    )
+    default = []
+    if "CONTABILIZADA" in estado_options:
+        default = ["CONTABILIZADA"]
+    elif estado_options:
+        default = [estado_options[0]]
+    return estado_options, default
+
+
+def _ensure_estado_filter_state(options: list[str], default: list[str]) -> list[str]:
+    valid_default = [opt for opt in default if opt in options]
+    if not valid_default and options:
+        valid_default = [options[0]]
+    if _ESTADO_FILTER_SESSION_KEY not in st.session_state:
+        st.session_state[_ESTADO_FILTER_SESSION_KEY] = valid_default
+    else:
+        current = [
+            opt
+            for opt in st.session_state[_ESTADO_FILTER_SESSION_KEY]
+            if opt in options
+        ]
+        if not current and valid_default:
+            current = valid_default
+        st.session_state[_ESTADO_FILTER_SESSION_KEY] = current
+    return st.session_state.get(_ESTADO_FILTER_SESSION_KEY, [])
+
+
+def _render_estado_filter(
+    options: list[str],
+    default: list[str],
+    *,
+    widget_key: str,
+    button_key: str,
+    label: str = "Estado de cuota (orden)",
+) -> list[str]:
+    current = _ensure_estado_filter_state(options, default)
+    st.session_state.setdefault(widget_key, current)
+    widget_current = [
+        opt for opt in st.session_state.get(widget_key, current) if opt in options
+    ]
+    if not widget_current and current:
+        widget_current = current
+    st.session_state[widget_key] = widget_current
+
+    available_extra = [
+        opt for opt in options if opt not in st.session_state[_ESTADO_FILTER_SESSION_KEY]
+    ]
+
+    label_col, button_col = st.columns([0.85, 0.15])
+    with label_col:
+        st.markdown(f"**{label}**")
+    with button_col:
+        add_clicked = st.button(
+            "➕",
+            key=button_key,
+            help="Agregar otro estado de cuota al filtro y orden",
+            disabled=len(available_extra) == 0,
+        )
+    if add_clicked and available_extra:
+        new_selection = (
+            st.session_state[_ESTADO_FILTER_SESSION_KEY] + [available_extra[0]]
+        )
+        st.session_state[_ESTADO_FILTER_SESSION_KEY] = new_selection
+        st.session_state[widget_key] = new_selection
+        try:
+            st.rerun()
+        except AttributeError:
+            st.experimental_rerun()
+
+    st.multiselect(
+        label,
+        options,
+        default=st.session_state.get(widget_key, current),
+        key=widget_key,
+        label_visibility="collapsed",
+        placeholder="Selecciona uno o más estados",
+    )
+
+    updated = [
+        opt for opt in st.session_state.get(widget_key, current) if opt in options
+    ]
+    if updated != st.session_state.get(_ESTADO_FILTER_SESSION_KEY, []):
+        st.session_state[_ESTADO_FILTER_SESSION_KEY] = updated
+    if options:
+        st.caption(
+            "Usa el botón ➕ para agregar estados adicionales al orden de prioridad."
+        )
+    return st.session_state.get(_ESTADO_FILTER_SESSION_KEY, [])
 
 
 def _table_style(df_disp: pd.DataFrame):
@@ -1364,15 +1472,29 @@ if not df_nopag_all.empty:
 else:
     df_nopag_all = df_nopag_all.iloc[0:0]
 
+estado_options, default_estados = _prepare_estado_filter_options(df_nopag_all, df)
+_ensure_estado_filter_state(estado_options, default_estados)
+
 if df_nopag_all.empty:
     st.info("No hay honorarios pendientes de pago.")
 else:
-    resumen_filter = st.radio(
-        "Tipo de cuenta especial (resumen)",
-        ["Todas", "Cuenta especial", "No cuenta especial"],
-        horizontal=True,
-        index=0,
-    )
+    col_estado_resumen, col_cuenta_resumen = st.columns([1.6, 1])
+
+    with col_estado_resumen:
+        selected_estados_resumen = _render_estado_filter(
+            estado_options,
+            default_estados,
+            widget_key=_ESTADO_FILTER_WIDGET_SECTION3,
+            button_key=_ESTADO_FILTER_BUTTON_SECTION3,
+        )
+
+    with col_cuenta_resumen:
+        resumen_filter = st.radio(
+            "Tipo de cuenta especial (resumen)",
+            ["Todas", "Cuenta especial", "No cuenta especial"],
+            horizontal=True,
+            index=0,
+        )
 
     if resumen_filter == "Cuenta especial":
         df_resumen = df_nopag_all[df_nopag_all["cuenta_especial"] == True]
@@ -1380,6 +1502,11 @@ else:
         df_resumen = df_nopag_all[df_nopag_all["cuenta_especial"] == False]
     else:
         df_resumen = df_nopag_all
+
+    if selected_estados_resumen and "estado_cuota" in df_resumen.columns:
+        df_resumen = df_resumen[
+            df_resumen["estado_cuota"].astype(str).isin(selected_estados_resumen)
+        ]
 
     categorias_visibles = [
         "Emisión posterior a cuota",
@@ -1514,74 +1641,13 @@ st.caption("Los filtros siguientes impactan esta sección y el presupuesto autom
 
 col_estado, col_cuenta, col_prioritario = st.columns([1.6, 1, 1])
 
-estado_values_source = None
-if "estado_cuota" in df_nopag_all.columns and not df_nopag_all.empty:
-    estado_values_source = df_nopag_all["estado_cuota"]
-elif "estado_cuota" in df.columns:
-    estado_values_source = df["estado_cuota"]
-else:
-    estado_values_source = pd.Series(dtype=str)
-
-estado_options = sorted(
-    pd.Series(estado_values_source).dropna().astype(str).unique().tolist()
-)
-default_estados = []
-if "CONTABILIZADA" in estado_options:
-    default_estados = ["CONTABILIZADA"]
-elif estado_options:
-    default_estados = [estado_options[0]]
-
-_ESTADO_FILTER_KEY = "hon_estado_multiselect"
-if _ESTADO_FILTER_KEY not in st.session_state:
-    st.session_state[_ESTADO_FILTER_KEY] = default_estados
-else:
-    current_selection = st.session_state.get(_ESTADO_FILTER_KEY, [])
-    if estado_options:
-        valid_selection = [opt for opt in current_selection if opt in estado_options]
-        if len(valid_selection) != len(current_selection):
-            st.session_state[_ESTADO_FILTER_KEY] = (
-                valid_selection if valid_selection else default_estados
-            )
-
 with col_estado:
-    label_col, button_col = st.columns([0.85, 0.15])
-    with label_col:
-        st.markdown("**Estado de cuota (orden)**")
-    selected_estados_state = st.session_state.get(_ESTADO_FILTER_KEY, default_estados)
-    available_extra_states = [
-        opt for opt in estado_options if opt not in selected_estados_state
-    ]
-    with button_col:
-        add_clicked = st.button(
-            "➕",
-            key="hon_estado_add",
-            help="Agregar otro estado de cuota al filtro y orden",
-            disabled=len(available_extra_states) == 0,
-        )
-    if add_clicked and available_extra_states:
-        st.session_state[_ESTADO_FILTER_KEY] = selected_estados_state + [
-            available_extra_states[0]
-        ]
-        try:
-            st.rerun()
-        except AttributeError:
-            st.experimental_rerun()
-    selected_estados = st.multiselect(
-        "Estado de cuota (orden)",
+    selected_estados = _render_estado_filter(
         estado_options,
-        default=st.session_state.get(_ESTADO_FILTER_KEY, default_estados),
-        key=_ESTADO_FILTER_KEY,
-        label_visibility="collapsed",
-        placeholder="Selecciona uno o más estados",
+        default_estados,
+        widget_key=_ESTADO_FILTER_WIDGET_SECTION4,
+        button_key=_ESTADO_FILTER_BUTTON_SECTION4,
     )
-    if estado_options:
-        st.caption("Usa el botón ➕ para agregar estados adicionales al orden de prioridad.")
-
-selected_estados = (
-    selected_estados
-    if selected_estados
-    else st.session_state.get(_ESTADO_FILTER_KEY, default_estados)
-)
 
 ce_local = col_cuenta.radio(
     "Cuenta Especial (local)",
