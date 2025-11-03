@@ -1512,18 +1512,76 @@ else:
 st.subheader("4) Proyección de Vencimientos y Tablas de Pago")
 st.caption("Los filtros siguientes impactan esta sección y el presupuesto automático.")
 
-col_cuenta, col_prioritario = st.columns([1, 1])
+col_estado, col_cuenta, col_prioritario = st.columns([1.6, 1, 1])
 
+estado_values_source = None
 if "estado_cuota" in df_nopag_all.columns and not df_nopag_all.empty:
-    estado_order = (
-        pd.Series(df_nopag_all["estado_cuota"]).dropna().astype(str).unique().tolist()
-    )
+    estado_values_source = df_nopag_all["estado_cuota"]
 elif "estado_cuota" in df.columns:
-    estado_order = (
-        pd.Series(df["estado_cuota"]).dropna().astype(str).unique().tolist()
-    )
+    estado_values_source = df["estado_cuota"]
 else:
-    estado_order = []
+    estado_values_source = pd.Series(dtype=str)
+
+estado_options = sorted(
+    pd.Series(estado_values_source).dropna().astype(str).unique().tolist()
+)
+default_estados = []
+if "CONTABILIZADA" in estado_options:
+    default_estados = ["CONTABILIZADA"]
+elif estado_options:
+    default_estados = [estado_options[0]]
+
+_ESTADO_FILTER_KEY = "hon_estado_multiselect"
+if _ESTADO_FILTER_KEY not in st.session_state:
+    st.session_state[_ESTADO_FILTER_KEY] = default_estados
+else:
+    current_selection = st.session_state.get(_ESTADO_FILTER_KEY, [])
+    if estado_options:
+        valid_selection = [opt for opt in current_selection if opt in estado_options]
+        if len(valid_selection) != len(current_selection):
+            st.session_state[_ESTADO_FILTER_KEY] = (
+                valid_selection if valid_selection else default_estados
+            )
+
+with col_estado:
+    label_col, button_col = st.columns([0.85, 0.15])
+    with label_col:
+        st.markdown("**Estado de cuota (orden)**")
+    selected_estados_state = st.session_state.get(_ESTADO_FILTER_KEY, default_estados)
+    available_extra_states = [
+        opt for opt in estado_options if opt not in selected_estados_state
+    ]
+    with button_col:
+        add_clicked = st.button(
+            "➕",
+            key="hon_estado_add",
+            help="Agregar otro estado de cuota al filtro y orden",
+            disabled=len(available_extra_states) == 0,
+        )
+    if add_clicked and available_extra_states:
+        st.session_state[_ESTADO_FILTER_KEY] = selected_estados_state + [
+            available_extra_states[0]
+        ]
+        try:
+            st.rerun()
+        except AttributeError:
+            st.experimental_rerun()
+    selected_estados = st.multiselect(
+        "Estado de cuota (orden)",
+        estado_options,
+        default=st.session_state.get(_ESTADO_FILTER_KEY, default_estados),
+        key=_ESTADO_FILTER_KEY,
+        label_visibility="collapsed",
+        placeholder="Selecciona uno o más estados",
+    )
+    if estado_options:
+        st.caption("Usa el botón ➕ para agregar estados adicionales al orden de prioridad.")
+
+selected_estados = (
+    selected_estados
+    if selected_estados
+    else st.session_state.get(_ESTADO_FILTER_KEY, default_estados)
+)
 
 ce_local = col_cuenta.radio(
     "Cuenta Especial (local)",
@@ -1544,6 +1602,8 @@ df_nopag_loc = _apply_local_filters(
     ce_filter=ce_local,
     prio_filter=prio_local,
 )
+if selected_estados and "estado_cuota" in df_nopag_loc.columns:
+    df_nopag_loc = df_nopag_loc[df_nopag_loc["estado_cuota"].isin(selected_estados)].copy()
 
 vencidos_m, vencidos_c = _agg_block(df_nopag_loc, df_nopag_loc.get("dias_a_vencer", pd.Series(dtype=float)) < 0) if not df_nopag_loc.empty and "dias_a_vencer" in df_nopag_loc else (0.0, 0)
 hoy_m, hoy_c = _agg_block(df_nopag_loc, df_nopag_loc.get("dias_a_vencer", pd.Series(dtype=float)) == 0) if not df_nopag_loc.empty and "dias_a_vencer" in df_nopag_loc else (0.0, 0)
@@ -1690,7 +1750,7 @@ else:
     st.info("No hay datos de vencimientos para proyectar con los filtros seleccionados.")
 
 candidatas_base = _apply_horizon_filter(df_nopag_loc, horizonte)
-candidatas_prior = _prioritize_documents(candidatas_base, estado_order)
+candidatas_prior = _prioritize_documents(candidatas_base, selected_estados)
 
 # Asegurar columna de prioridad de tiempo para tablas (negativo = vencido)
 if "dias_a_vencer" in candidatas_prior.columns:
@@ -1718,6 +1778,7 @@ else:
     local_filters = {
         "ce": ce_local,
         "prio": prio_local,
+        "estado": tuple(selected_estados),
     }
     _update_presupuesto_session_state(local_filters, float(default_presu))
 
