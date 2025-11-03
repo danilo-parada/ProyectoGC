@@ -726,12 +726,16 @@ if df_nopag_all.empty:
     st.info("No hay documentos pendientes.")
 else:
     n1 = (
-        df_nopag_all[df_nopag_all["Nivel"].eq("Contabilizado Pendiente de Pago")]
+        df_nopag_all[
+            df_nopag_all["Nivel"].eq("Contabilizado Pendiente de Pago")
+        ]
         if "Nivel" in df_nopag_all
         else df_nopag_all.iloc[0:0]
     )
     n2 = (
-        df_nopag_all[df_nopag_all["Nivel"].eq("Pendiente de Contabilización")]
+        df_nopag_all[
+            df_nopag_all["Nivel"].eq("Pendiente de Contabilización")
+        ]
         if "Nivel" in df_nopag_all
         else df_nopag_all.iloc[0:0]
     )
