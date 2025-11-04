@@ -1085,13 +1085,6 @@ with metric_cols[4]:
     breakdown = _counts_html(no_pagadas_ce_count, no_pagadas_no_ce_count) if ce_available else None
     _render_metric_block("No pagadas", format_int(count_no_pagadas), footer=f"{pct_no_pagadas_total:.1f}% del total", breakdown_html=breakdown)
 
-if (count_same_day_total + count_anticipada_total + count_especial_total) > 0:
-    st.caption(
-        f"Dentro de plazo (total): {count_same_day_total:,} mismo dia | {count_anticipada_total:,} anticipadas | {count_especial_total:,} especiales"
-    )
-if count_sin_info > 0:
-    st.caption(f"{count_sin_info:,} honorarios pagados sin fechas completas para clasificar.")
-
 amount_cols = st.columns(4)
 with amount_cols[0]:
     breakdown = _amount_html(monto_pagado_ce, monto_pagado_no) if ce_available else None
