@@ -1585,8 +1585,48 @@ else:
         "Margen al emitir = fecha de cuota - fecha de emisión; si es negativo, la cuota nace con atraso."
     )
     cards_categoria: list[str] = []
+    summary_cards: list[str] = []
     cards_sin_info: list[str] = []
     categorias_iterables = categorias_visibles + ["Sin información de fechas"]
+    if "cuenta_especial" in df_resumen.columns:
+        for flag, flag_label in ((True, "Cuenta especial"), (False, "No cuenta especial")):
+            subset_flag = df_resumen[
+                (df_resumen["cuenta_especial"] == flag)
+                & df_resumen["clasificacion_plazo"].isin(categorias_visibles)
+            ]
+            if subset_flag.empty:
+                continue
+            amount_series_flag = (
+                pd.to_numeric(subset_flag.get("importe_pendiente"), errors="coerce").fillna(0.0)
+                if "importe_pendiente" in subset_flag
+                else pd.Series(dtype=float)
+            )
+            total_monto_flag = float(amount_series_flag.sum())
+            total_docs_flag = int(len(subset_flag))
+            dias_prom_pago_flag = _avg_days_from_series(
+                subset_flag.get("dias_sin_pago")
+            )
+            dias_prom_cuota_flag = _avg_days_from_series(
+                subset_flag.get("dias_para_cuota")
+            )
+            dias_prom_margen_flag = _avg_days_from_series(
+                subset_flag.get("margen_emision")
+            )
+            summary_cards.append(
+                _card_html(
+                    title=f"Total {flag_label}",
+                    value=money(total_monto_flag),
+                    subtitle=f"{total_docs_flag:,} honorarios sin pagar",
+                    stats=[
+                        ("Prom. días sin pago", _fmt_days(dias_prom_pago_flag)),
+                        ("Prom. días hasta cuota", _fmt_days(dias_prom_cuota_flag)),
+                        ("Margen al emitir", _fmt_days(dias_prom_margen_flag)),
+                    ],
+                    tone="accent" if flag else "default",
+                    compact=False,
+                    tooltip=tooltip_plazo,
+                )
+            )
     for label in categorias_iterables:
         subset = df_resumen[df_resumen["clasificacion_plazo"] == label]
         if subset.empty:
@@ -1627,11 +1667,14 @@ else:
                 cards_sin_info.append(card_html)
             else:
                 cards_categoria.append(card_html)
-    if cards_categoria:
+    if summary_cards or cards_categoria:
         safe_markdown(
             "<div class='app-title-block'><h3 style='color:#000;'>Clasificación por fecha de cuota</h3>"
             "<p>Desglose basado en la comparación entre emisión y cuota.</p></div>"
         )
+    if summary_cards:
+        _render_cards(summary_cards, layout="grid-2")
+    if cards_categoria:
         _render_cards(cards_categoria, layout="grid-2")
     if cards_sin_info:
         safe_markdown(
