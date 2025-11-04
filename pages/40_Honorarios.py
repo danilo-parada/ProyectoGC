@@ -205,6 +205,19 @@ safe_markdown(
         color: var(--app-text, #e6f1ff);
         font-weight: 600;
     }
+    .honorarios-metric-card__breakdown-group {
+        display: block;
+        margin-top: 0.35rem;
+    }
+    .honorarios-metric-card__breakdown-group:first-child {
+        margin-top: 0;
+    }
+    .honorarios-metric-card__breakdown-sub {
+        display: block;
+        margin-left: 0.75rem;
+        font-size: 0.78rem;
+        color: var(--app-text-muted, #9db4d5);
+    }
     </style>
     """,
 )
@@ -236,6 +249,57 @@ def _amount_html(ce_val: float, no_val: float) -> str:
         f"<span>No cuenta especial: <strong>{money(no_val)}</strong></span>"
         "</div>"
     )
+
+def _pending_amount_breakdown_html(
+    contabilizado_total: float,
+    tramite_total: float,
+    *,
+    ce_available: bool,
+    contabilizado_ce: float = 0.0,
+    contabilizado_no_ce: float = 0.0,
+    tramite_ce: float = 0.0,
+    tramite_no_ce: float = 0.0,
+) -> str:
+    parts: list[str] = ["<div class='honorarios-metric-card__breakdown'>"]
+
+    def _add_group(
+        label: str,
+        total: float,
+        ce_amount: float,
+        no_ce_amount: float,
+    ) -> None:
+        parts.extend(
+            [
+                "<div class='honorarios-metric-card__breakdown-group'>",
+                f"<span>{label}: <strong>{money(total)}</strong></span>",
+            ]
+        )
+        if ce_available:
+            parts.append(
+                "<span class='honorarios-metric-card__breakdown-sub'>Cuenta especial: "
+                f"<strong>{money(ce_amount)}</strong></span>"
+            )
+            parts.append(
+                "<span class='honorarios-metric-card__breakdown-sub'>No cuenta especial: "
+                f"<strong>{money(no_ce_amount)}</strong></span>"
+            )
+        parts.append("</div>")
+
+    _add_group(
+        "Contabilizado",
+        contabilizado_total,
+        contabilizado_ce,
+        contabilizado_no_ce,
+    )
+    _add_group(
+        "En trámite",
+        tramite_total,
+        tramite_ce,
+        tramite_no_ce,
+    )
+
+    parts.append("</div>")
+    return "".join(parts)
 
 def _render_metric_block(
     title: str,
@@ -1007,17 +1071,42 @@ else:
     pagadas_ce_df = pagadas.iloc[0:0]
     pagadas_no_ce_df = pagadas.iloc[0:0]
 
-if ce_available and count_no_pagadas:
-    no_pagadas_ce_df = no_pagadas.loc[no_pagadas_ce_flag]
-    no_pagadas_no_ce_df = no_pagadas.loc[~no_pagadas_ce_flag]
-else:
-    no_pagadas_ce_df = no_pagadas.iloc[0:0]
-    no_pagadas_no_ce_df = no_pagadas.iloc[0:0]
-
 monto_pagado_ce = _sum_numeric(pagadas_ce_df, ["monto_cuota", "monto_pagado", "liquido_cuota", "fac_monto_total"])
 monto_pagado_no = max(0.0, monto_pagado_total - monto_pagado_ce)
-monto_no_pagado_ce = _sum_numeric(no_pagadas_ce_df, ["monto_cuota", "monto_autorizado", "fac_monto_total"])
-monto_no_pagado_no = max(0.0, monto_no_pagado_total - monto_no_pagado_ce)
+if count_no_pagadas and "estado_cuota" in no_pagadas.columns:
+    estado_no_pagadas = (
+        no_pagadas["estado_cuota"].astype(str).str.strip().str.upper()
+    )
+    contabilizado_mask = estado_no_pagadas == "CONTABILIZADA"
+else:
+    contabilizado_mask = pd.Series(False, index=no_pagadas.index, dtype=bool)
+
+tramite_mask = ~contabilizado_mask
+_pending_amount_cols = ["monto_cuota", "monto_autorizado", "fac_monto_total"]
+
+monto_no_pagado_contabilizado = _sum_numeric(
+    no_pagadas.loc[contabilizado_mask], _pending_amount_cols
+)
+monto_no_pagado_tramite = _sum_numeric(
+    no_pagadas.loc[tramite_mask], _pending_amount_cols
+)
+
+if ce_available and count_no_pagadas:
+    monto_contabilizado_ce = _sum_numeric(
+        no_pagadas.loc[contabilizado_mask & no_pagadas_ce_flag], _pending_amount_cols
+    )
+    monto_contabilizado_no_ce = _sum_numeric(
+        no_pagadas.loc[contabilizado_mask & ~no_pagadas_ce_flag], _pending_amount_cols
+    )
+    monto_tramite_ce = _sum_numeric(
+        no_pagadas.loc[tramite_mask & no_pagadas_ce_flag], _pending_amount_cols
+    )
+    monto_tramite_no_ce = _sum_numeric(
+        no_pagadas.loc[tramite_mask & ~no_pagadas_ce_flag], _pending_amount_cols
+    )
+else:
+    monto_contabilizado_ce = monto_contabilizado_no_ce = 0.0
+    monto_tramite_ce = monto_tramite_no_ce = 0.0
 
 count_same_day_total = count_same_day
 count_anticipada_total = count_anticipada
@@ -1052,8 +1141,20 @@ with amount_cols[0]:
     breakdown = _amount_html(monto_pagado_ce, monto_pagado_no) if ce_available else None
     _render_metric_block("Monto cuota (pagadas)", money(monto_pagado_total), breakdown_html=breakdown)
 with amount_cols[1]:
-    breakdown = _amount_html(monto_no_pagado_ce, monto_no_pagado_no) if ce_available else None
-    _render_metric_block("Monto no pagado", money(monto_no_pagado_total), breakdown_html=breakdown)
+    breakdown = _pending_amount_breakdown_html(
+        monto_no_pagado_contabilizado,
+        monto_no_pagado_tramite,
+        ce_available=ce_available,
+        contabilizado_ce=monto_contabilizado_ce,
+        contabilizado_no_ce=monto_contabilizado_no_ce,
+        tramite_ce=monto_tramite_ce,
+        tramite_no_ce=monto_tramite_no_ce,
+    )
+    _render_metric_block(
+        "Monto no pagado",
+        money(monto_no_pagado_total),
+        breakdown_html=breakdown,
+    )
 
 # ---------------------------------------------------------
 # Tipología de pagos (solo PAGADAS) basada en emisión, cuota y CE
