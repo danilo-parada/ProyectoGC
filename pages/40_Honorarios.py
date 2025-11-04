@@ -214,11 +214,18 @@ ce_flag_all = df["cuenta_especial"].fillna(False).astype(bool) if ce_available e
 
 CE_COLORS = ["#4E79A7", "#A0A0A0"]
 
+def format_int(value: int | float) -> str:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return "0"
+    return f"{number:,}".replace(",", ".")
+
 def _counts_html(ce_val: int, no_val: int) -> str:
     return (
         "<div class='honorarios-metric-card__breakdown'>"
-        f"<span>Cuenta especial: <strong>{ce_val:,}</strong></span><br>"
-        f"<span>No cuenta especial: <strong>{no_val:,}</strong></span>"
+        f"<span>Cuenta especial: <strong>{format_int(ce_val)}</strong></span><br>"
+        f"<span>No cuenta especial: <strong>{format_int(no_val)}</strong></span>"
         "</div>"
     )
 
@@ -1019,19 +1026,19 @@ count_especial_total = count_especial
 metric_cols = st.columns(5)
 with metric_cols[0]:
     breakdown = _counts_html(total_ce_count, total_no_ce_count) if ce_available else None
-    _render_metric_block("Honorarios cargados", f"{total_docs:,}", breakdown_html=breakdown)
+    _render_metric_block("Honorarios cargados", format_int(total_docs), breakdown_html=breakdown)
 with metric_cols[1]:
     breakdown = _counts_html(pagadas_ce_count, pagadas_no_ce_count) if ce_available else None
-    _render_metric_block("Pagadas", f"{count_pagadas:,}", footer=f"{pct_pagadas_total:.1f}% del total", breakdown_html=breakdown)
+    _render_metric_block("Pagadas", format_int(count_pagadas), footer=f"{pct_pagadas_total:.1f}% del total", breakdown_html=breakdown)
 with metric_cols[2]:
     breakdown = _counts_html(en_plazo_ce_count, en_plazo_no_ce_count) if ce_available else None
-    _render_metric_block("Pagadas dentro de plazo", f"{count_en_plazo:,}", footer=f"{pct_en_plazo:.1f}% de pagadas", breakdown_html=breakdown)
+    _render_metric_block("Pagadas dentro de plazo", format_int(count_en_plazo), footer=f"{pct_en_plazo:.1f}% de pagadas", breakdown_html=breakdown)
 with metric_cols[3]:
     breakdown = _counts_html(atraso_ce_count, atraso_no_ce_count) if ce_available else None
-    _render_metric_block("Pagadas con atraso", f"{count_atraso:,}", footer=f"{pct_atraso:.1f}% de pagadas", breakdown_html=breakdown)
+    _render_metric_block("Pagadas con atraso", format_int(count_atraso), footer=f"{pct_atraso:.1f}% de pagadas", breakdown_html=breakdown)
 with metric_cols[4]:
     breakdown = _counts_html(no_pagadas_ce_count, no_pagadas_no_ce_count) if ce_available else None
-    _render_metric_block("No pagadas", f"{count_no_pagadas:,}", footer=f"{pct_no_pagadas_total:.1f}% del total", breakdown_html=breakdown)
+    _render_metric_block("No pagadas", format_int(count_no_pagadas), footer=f"{pct_no_pagadas_total:.1f}% del total", breakdown_html=breakdown)
 
 if (count_same_day_total + count_anticipada_total + count_especial_total) > 0:
     st.caption(
