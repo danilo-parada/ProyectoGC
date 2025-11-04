@@ -1136,7 +1136,7 @@ if (count_same_day_total + count_anticipada_total + count_especial_total) > 0:
 if count_sin_info > 0:
     st.caption(f"{count_sin_info:,} honorarios pagados sin fechas completas para clasificar.")
 
-amount_cols = st.columns(2)
+amount_cols = st.columns(4)
 with amount_cols[0]:
     breakdown = _amount_html(monto_pagado_ce, monto_pagado_no) if ce_available else None
     _render_metric_block("Monto cuota (pagadas)", money(monto_pagado_total), breakdown_html=breakdown)
@@ -1151,8 +1151,22 @@ with amount_cols[1]:
         tramite_no_ce=monto_tramite_no_ce,
     )
     _render_metric_block(
-        "Monto no pagado",
+        "Monto no pagado Total",
         money(monto_no_pagado_total),
+        breakdown_html=breakdown,
+    )
+with amount_cols[2]:
+    breakdown = _amount_html(monto_contabilizado_ce, monto_contabilizado_no_ce) if ce_available else None
+    _render_metric_block(
+        "Monto no pagado Contabilizado",
+        money(monto_no_pagado_contabilizado),
+        breakdown_html=breakdown,
+    )
+with amount_cols[3]:
+    breakdown = _amount_html(monto_tramite_ce, monto_tramite_no_ce) if ce_available else None
+    _render_metric_block(
+        "Monto no pagado En trámite",
+        money(monto_no_pagado_tramite),
         breakdown_html=breakdown,
     )
 
