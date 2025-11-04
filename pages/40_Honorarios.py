@@ -1192,17 +1192,17 @@ if count_pagadas:
         existing = [c for c in cols_order if c in disp_g.columns]
         disp_g = disp_g[existing + [c for c in disp_g.columns if c not in existing]]
         disp_g = sanitize_df(disp_g)
-        st.markdown("#### Tipologia detallada (Clasificacion Global)")
-        style_table(_table_style(disp_g))
-        st.download_button(
-            "Descargar Tipologia Detallada",
-            data=excel_bytes_single(
-                disp_g.rename(columns={"Monto_Cuota": "Monto_Cuota"}),
-                "Tipologia_Clasificacion_Pagadas"
-            ),
-            file_name="pagadas_tipologia_clasificacion.xlsx",
-            disabled=resumen_global.empty,
-        )
+        with st.expander("Tipologia detallada (Clasificacion Global)", expanded=False):
+            style_table(_table_style(disp_g))
+            st.download_button(
+                "Descargar Tipologia Detallada",
+                data=excel_bytes_single(
+                    disp_g.rename(columns={"Monto_Cuota": "Monto_Cuota"}),
+                    "Tipologia_Clasificacion_Pagadas"
+                ),
+                file_name="pagadas_tipologia_clasificacion.xlsx",
+                disabled=resumen_global.empty,
+            )
 
 if count_pagadas:
     pagadas["tiempo_pago_planeado"] = (pagadas["fecha_cuota_ref"] - pagadas["fecha_emision_ref"]).dt.days
