@@ -734,6 +734,7 @@ def _compute_presupuesto_selection(
     tolerance = 1e-6
     selected_mask = tmp["acum"] <= presupuesto_val + tolerance
     seleccion = tmp[selected_mask].drop(columns=["acum", "importe_regla_num"], errors="ignore")
+    seleccion = _ensure_display_dates(seleccion)
     suma_sel = float(tmp.loc[selected_mask, "importe_regla_num"].sum())
 
     restante_raw = presupuesto_val - suma_sel
@@ -861,7 +862,33 @@ BASE_KEEP_COLS = [
 ]
 
 
+def _ensure_display_dates(dfin: pd.DataFrame) -> pd.DataFrame:
+    """Garantiza presencia de columnas de fecha para tablas y reportes."""
+
+    if dfin is None:
+        return pd.DataFrame()
+    if getattr(dfin, "empty", True):
+        return dfin.copy()
+
+    out = dfin.copy()
+
+    if "fecha_emision" not in out.columns:
+        for source in ("fecha_emision_ref", "fac_fecha_factura"):
+            if source in out.columns:
+                out["fecha_emision"] = out[source]
+                break
+
+    if "fecha_cuota" not in out.columns:
+        for source in ("fecha_cuota_ref", "fecha_cc"):
+            if source in out.columns:
+                out["fecha_cuota"] = out[source]
+                break
+
+    return out
+
+
 def _prep_show(d: pd.DataFrame) -> pd.DataFrame:
+    d = _ensure_display_dates(d)
     keep = [c for c in BASE_KEEP_COLS if c in d.columns]
     show = d[keep].rename(
         columns={
@@ -912,12 +939,12 @@ def _prep_show(d: pd.DataFrame) -> pd.DataFrame:
     order_pdf_like = [
         "RUT",
         "Inicio Convenio",
-        "T?rmino Convenio",
-        "Fecha Emisi??n",
+        "Término Convenio",
+        "Fecha Emisión",
         "Fecha Cuota",
         "Dias_Hasta_Cuota",
         "Estado Cuota",
-        "C??digo Centro",
+        "Código Centro",
         "Monto Cuota",
         "Cuenta Especial",
         "Banco",
@@ -930,6 +957,7 @@ def _prep_show(d: pd.DataFrame) -> pd.DataFrame:
     return show
     
 def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
+    d = _ensure_display_dates(d)
     keep = [c for c in BASE_KEEP_COLS if c in d.columns]
     out = d[keep].rename(
         columns={
@@ -972,12 +1000,12 @@ def _prep_export(d: pd.DataFrame) -> pd.DataFrame:
     order_pdf_like = [
         "RUT",
         "Inicio Convenio",
-        "TǸrmino Convenio",
-        "Fecha Emisi��n",
+        "Término Convenio",
+        "Fecha Emisión",
         "Fecha Cuota",
         "Dias_Hasta_Cuota",
         "Estado Cuota",
-        "C��digo Centro",
+        "Código Centro",
         "Monto Cuota",
         "Cuenta Especial",
         "Banco",
@@ -1927,6 +1955,7 @@ else:
 
 candidatas_base = _apply_horizon_filter(df_nopag_loc, horizonte)
 candidatas_prior = _prioritize_documents(candidatas_base, selected_estados)
+candidatas_prior = _ensure_display_dates(candidatas_prior)
 
 # Asegurar columna de prioridad de tiempo para tablas (negativo = vencido)
 if "dias_a_vencer" in candidatas_prior.columns:
